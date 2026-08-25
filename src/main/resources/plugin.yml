@@ -2,5 +2,7 @@ name: lapis-plugin
 version: '${version}'
 
 main: org.asdf.lapisPlugin.LapisPlugin
+description: Lapis Plugin
+authors: [Async-CN, Nirvana]
 api-version: '1.21.11'
 load: POSTWORLD
