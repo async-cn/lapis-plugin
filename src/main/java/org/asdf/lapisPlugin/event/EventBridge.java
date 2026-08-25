@@ -104,7 +104,7 @@ public class EventBridge {
             message.addProperty("message_type", "event");
             message.add("data", innerData);
 
-            LapisPlugin.getInstance().getTcpManager().send(message);
+            LapisPlugin.getInstance().getTcpManager().sendEvent(info.packageName, message);
         }
     }
 
