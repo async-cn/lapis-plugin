@@ -8,6 +8,8 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class TcpManager {
@@ -169,5 +171,24 @@ public class TcpManager {
             this.socket = socket;
             this.out = out;
         }
+    }
+
+    public List<String> getConnectedPackages() {
+        List<String> list = new ArrayList<>();
+        for (ClientSession session : sessions.values()) {
+            if (session.packageName != null) {
+                list.add(session.packageName);
+            }
+        }
+        return list;
+    }
+
+    public boolean isConnected() {
+        for (ClientSession session : sessions.values()) {
+            if (session.socket != null && session.socket.isConnected() && !session.socket.isClosed()) {
+                return true;
+            }
+        }
+        return false;
     }
 }

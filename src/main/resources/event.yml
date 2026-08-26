@@ -1,0 +1,9 @@
+# Lapis 事件白名单
+# 只有在此列表中的事件类型才能被 Python 端监听
+# 留空或删除 enabled-events 表示允许所有已定义事件
+enabled-events:
+  - PlayerJoin
+  - PlayerQuit
+  - BlockBreak
+  - BlockPlace
+  - PlayerChat

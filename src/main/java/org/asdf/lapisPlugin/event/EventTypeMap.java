@@ -7,8 +7,10 @@ import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public class EventTypeMap {
 
@@ -33,5 +35,9 @@ public class EventTypeMap {
 
     public static boolean isSupported(String eventType) {
         return MAP.containsKey(eventType);
+    }
+
+    public static Set<String> getAllSupported() {
+        return Collections.unmodifiableSet(MAP.keySet());
     }
 }

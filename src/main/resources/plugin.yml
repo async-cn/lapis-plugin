@@ -6,3 +6,14 @@ description: Lapis Plugin
 authors: [Async-CN, Nirvana]
 api-version: '1.21.11'
 load: POSTWORLD
+
+commands:
+  lapis:
+    description: Lapis management command
+    usage: /lapis <help|status|list|reload|enable|disable>
+    permission: lapis.admin
+
+permissions:
+  lapis.admin:
+    description: Allows access to all /lapis subcommands
+    default: op

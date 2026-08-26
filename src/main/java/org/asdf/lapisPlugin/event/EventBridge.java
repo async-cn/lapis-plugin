@@ -4,12 +4,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
 import org.bukkit.event.Event;
-import org.bukkit.plugin.EventExecutor;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
+import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.asdf.lapisPlugin.LapisPlugin;
+import org.asdf.lapisPlugin.config.EventConfig;
 import org.asdf.lapisPlugin.filter.FilterEngine;
 import org.asdf.lapisPlugin.filter.SubscriptionExtractor;
 
@@ -18,24 +19,37 @@ import java.util.*;
 public class EventBridge {
 
     private final JavaPlugin plugin;
+    private final EventConfig eventConfig;  // ← 新增
     private final Map<String, List<ListenerInfo>> registry = new HashMap<>();
     private final Map<String, Listener> activeListeners = new HashMap<>();
 
-    public EventBridge(JavaPlugin plugin) {
+    // ← 修改构造器，接收 EventConfig
+    public EventBridge(JavaPlugin plugin, EventConfig eventConfig) {
         this.plugin = plugin;
+        this.eventConfig = eventConfig;
     }
 
-    public void register(String eventType, String packageName, UUID uuid, JsonObject filter, JsonArray subscription) {
-        if (!EventTypeMap.isSupported(eventType)) {
-            plugin.getLogger().warning("Unsupported event type: " + eventType);
-            return;
+    /**
+     * 注册监听器，返回 null 表示成功，否则返回错误信息
+     */
+    public String register(String eventType, String packageName, UUID uuid, JsonObject filter, JsonArray subscription) {
+        // 白名单检查
+        if (!eventConfig.isEnabled(eventType)) {
+            plugin.getLogger().warning("Event '" + eventType + "' rejected: not in event.yml whitelist (package: " + packageName + ")");
+            return "Event type '" + eventType + "' is not enabled in event.yml";
         }
+
+        if (!EventTypeMap.isSupported(eventType)) {
+            return "Unsupported event type: " + eventType;
+        }
+
         registry.computeIfAbsent(eventType, k -> new ArrayList<>())
                 .add(new ListenerInfo(uuid, packageName, filter, subscription));
 
         if (registry.get(eventType).size() == 1) {
             registerBukkitListener(eventType);
         }
+        return null;
     }
 
     public void unregister(UUID uuid) {
@@ -66,7 +80,6 @@ public class EventBridge {
         Class<? extends Event> eventClass = EventTypeMap.get(eventType);
         if (eventClass == null) return;
 
-        // 用 EventExecutor 注册，不需要 @EventHandler
         Listener listener = new Listener() {};
         EventExecutor executor = (l, event) -> handleEvent(eventType, event);
 
@@ -110,6 +123,19 @@ public class EventBridge {
 
             LapisPlugin.getInstance().getTcpManager().sendEvent(info.packageName, message);
         }
+    }
+
+    // 查询方法
+    public int getTotalListenerCount() {
+        return registry.values().stream().mapToInt(List::size).sum();
+    }
+
+    public int getActiveEventTypeCount() {
+        return activeListeners.size();
+    }
+
+    public Map<String, List<ListenerInfo>> getRegistrySnapshot() {
+        return new HashMap<>(registry);
     }
 
     public record ListenerInfo(UUID uuid, String packageName, JsonObject filter, JsonArray subscription) {}

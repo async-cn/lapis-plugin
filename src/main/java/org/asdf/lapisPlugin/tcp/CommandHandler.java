@@ -96,4 +96,30 @@ public class CommandHandler {
 
         return response;
     }
+
+    private static void handleRegister(JsonObject data, JsonObject response) {
+        String eventType = data.get("event_type").getAsString();
+        UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
+        String packageName = data.has("package_name") ? data.get("package_name").getAsString() : "unknown";
+        JsonObject filter = data.has("filter") ? data.getAsJsonObject("filter") : new JsonObject();
+        var subscription = data.has("subscription") ? data.getAsJsonArray("subscription") : new com.google.gson.JsonArray();
+
+        String error = LapisPlugin.getInstance().getEventBridge().register(eventType, packageName, uuid, filter, subscription);
+
+        if (error != null) {
+            response.addProperty("response_type", "register_event_listener_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", error);
+            response.add("data", errData);
+            return;
+        }
+
+        response.addProperty("response_type", "register_event_listener_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("listener_uuid", uuid.toString());
+        respData.addProperty("state", "ok");
+        response.add("data", respData);
+    }
 }
