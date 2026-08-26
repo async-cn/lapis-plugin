@@ -1,5 +1,6 @@
 package org.asdf.lapisPlugin;
 
+import org.asdf.lapisPlugin.pdc.PdcManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.asdf.lapisPlugin.command.LapisCommand;
 import org.asdf.lapisPlugin.config.EventConfig;
@@ -14,6 +15,7 @@ public class LapisPlugin extends JavaPlugin {
     private TcpManager tcpManager;
     private LanguageManager languageManager;
     private EventConfig eventConfig;
+    private PdcManager pdcManager;
 
     @Override
     public void onEnable() {
@@ -25,6 +27,8 @@ public class LapisPlugin extends JavaPlugin {
 
         this.languageManager = new LanguageManager(this);
         this.languageManager.load(getConfig().getString("language", "zhcn"));
+
+        pdcManager = new PdcManager(this);
 
         int port = getConfig().getInt("tcp-port", 9331);
 
@@ -65,5 +69,9 @@ public class LapisPlugin extends JavaPlugin {
 
     public EventConfig getEventConfig() {
         return eventConfig;
+    }
+
+    public PdcManager getPdcManager() {
+        return pdcManager;
     }
 }

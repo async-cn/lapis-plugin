@@ -19,7 +19,6 @@ public class TcpManager {
     private ServerSocket serverSocket;
     private Thread serverThread;
     private volatile boolean running = false;
-    // package_name -> 连接会话，用于发 event
     private final ConcurrentHashMap<String, ClientSession> sessions = new ConcurrentHashMap<>();
 
     public TcpManager(LapisPlugin plugin, int port) {
@@ -87,7 +86,6 @@ public class TcpManager {
 
                 int id = msg.get("id").getAsInt();
 
-                // 必须先 handshake
                 if (!handshaked) {
                     String cmdType = msg.has("command_type") ? msg.get("command_type").getAsString() : "";
                     if (!"handshake".equals(cmdType)) {
@@ -112,12 +110,19 @@ public class TcpManager {
                         sessions.put(packageName, session);
                         plugin.getLogger().info("Handshake success: " + packageName);
                     } else {
-                        break; // 握手失败，断开
+                        break;
                     }
                     continue;
                 }
 
-                // 已握手，正常处理 command
+                if (msg.has("message_response_type") && "event_proxy_result".equals(msg.get("message_response_type").getAsString())) {
+                    JsonObject respData = msg.getAsJsonObject("data");
+                    String eventId = respData.get("event_id").getAsString();
+                    LapisPlugin.getInstance().getEventBridge().onProxyResponse(eventId, respData);
+                    continue;
+                }
+
+
                 final JsonObject command = msg;
                 final String finalPackageName = packageName;
                 final DataOutputStream finalOut = out;
@@ -154,7 +159,6 @@ public class TcpManager {
         }
     }
 
-    // 发 event 给指定 package
     public void sendEvent(String packageName, JsonObject message) {
         ClientSession session = sessions.get(packageName);
         if (session != null) {

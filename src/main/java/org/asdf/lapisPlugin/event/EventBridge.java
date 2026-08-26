@@ -3,6 +3,7 @@ package org.asdf.lapisPlugin.event;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
+import org.bukkit.event.Cancellable;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
@@ -15,25 +16,25 @@ import org.asdf.lapisPlugin.filter.FilterEngine;
 import org.asdf.lapisPlugin.filter.SubscriptionExtractor;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class EventBridge {
 
     private final JavaPlugin plugin;
-    private final EventConfig eventConfig;  // ← 新增
+    private final EventConfig eventConfig;
     private final Map<String, List<ListenerInfo>> registry = new HashMap<>();
     private final Map<String, Listener> activeListeners = new HashMap<>();
+    private final Map<String, CompletableFuture<JsonObject>> proxyFutures = new ConcurrentHashMap<>();
+    private static final long PROXY_TIMEOUT_MS = 3000;
 
-    // ← 修改构造器，接收 EventConfig
     public EventBridge(JavaPlugin plugin, EventConfig eventConfig) {
         this.plugin = plugin;
         this.eventConfig = eventConfig;
     }
 
-    /**
-     * 注册监听器，返回 null 表示成功，否则返回错误信息
-     */
-    public String register(String eventType, String packageName, UUID uuid, JsonObject filter, JsonArray subscription) {
-        // 白名单检查
+    public String register(String eventType, String packageName, UUID uuid, JsonObject filter, JsonArray subscription, boolean proxy) {
         if (!eventConfig.isEnabled(eventType)) {
             plugin.getLogger().warning("Event '" + eventType + "' rejected: not in event.yml whitelist (package: " + packageName + ")");
             return "Event type '" + eventType + "' is not enabled in event.yml";
@@ -44,7 +45,7 @@ public class EventBridge {
         }
 
         registry.computeIfAbsent(eventType, k -> new ArrayList<>())
-                .add(new ListenerInfo(uuid, packageName, filter, subscription));
+                .add(new ListenerInfo(uuid, packageName, filter, subscription, proxy));
 
         if (registry.get(eventType).size() == 1) {
             registerBukkitListener(eventType);
@@ -73,6 +74,14 @@ public class EventBridge {
                 unregisterBukkitListener(entry.getKey());
                 it.remove();
             }
+        }
+    }
+
+    // 被 TcpManager 调用，处理 Python 回传的 message_response
+    public void onProxyResponse(String eventId, JsonObject responseData) {
+        CompletableFuture<JsonObject> future = proxyFutures.remove(eventId);
+        if (future != null) {
+            future.complete(responseData);
         }
     }
 
@@ -117,15 +126,39 @@ public class EventBridge {
             outerData.addProperty("listener_uuid", info.uuid.toString());
             outerData.add("data", payload);
 
-            JsonObject message = new JsonObject();
-            message.addProperty("message_type", "event");
-            message.add("data", outerData);
+            if (info.proxy) {
+                String eventId = UUID.randomUUID().toString();
+                outerData.addProperty("event_id", eventId);
+                outerData.addProperty("proxy", true);
 
-            LapisPlugin.getInstance().getTcpManager().sendEvent(info.packageName, message);
+                CompletableFuture<JsonObject> future = new CompletableFuture<>();
+                proxyFutures.put(eventId, future);
+
+                JsonObject message = new JsonObject();
+                message.addProperty("message_type", "event");
+                message.add("data", outerData);
+                LapisPlugin.getInstance().getTcpManager().sendEvent(info.packageName, message);
+
+                try {
+                    JsonObject responseData = future.get(PROXY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    boolean continueEvent = responseData.has("continue") && responseData.get("continue").getAsBoolean();
+                    if (!continueEvent && event instanceof Cancellable cancellable) {
+                        cancellable.setCancelled(true);
+                    }
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Proxy event timeout or error for " + eventType + ": " + e.getMessage());
+                } finally {
+                    proxyFutures.remove(eventId);
+                }
+            } else {
+                JsonObject message = new JsonObject();
+                message.addProperty("message_type", "event");
+                message.add("data", outerData);
+                LapisPlugin.getInstance().getTcpManager().sendEvent(info.packageName, message);
+            }
         }
     }
 
-    // 查询方法
     public int getTotalListenerCount() {
         return registry.values().stream().mapToInt(List::size).sum();
     }
@@ -138,5 +171,5 @@ public class EventBridge {
         return new HashMap<>(registry);
     }
 
-    public record ListenerInfo(UUID uuid, String packageName, JsonObject filter, JsonArray subscription) {}
+    public record ListenerInfo(UUID uuid, String packageName, JsonObject filter, JsonArray subscription, boolean proxy) {}
 }

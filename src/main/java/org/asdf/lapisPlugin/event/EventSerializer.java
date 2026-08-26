@@ -1,8 +1,6 @@
 package org.asdf.lapisPlugin.event;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -10,6 +8,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.asdf.lapisPlugin.LapisPlugin;
 
 public class EventSerializer {
 
@@ -58,20 +57,22 @@ public class EventSerializer {
         return data;
     }
 
-
     private static JsonObject serializePlayer(Player player) {
         JsonObject obj = new JsonObject();
         obj.addProperty("uuid", player.getUniqueId().toString());
 
-        JsonObject inventory = new JsonObject();
-        for (var item : player.getInventory().getContents()) {
-            if (item == null || item.isEmpty()) continue;
-            String id = item.getType().getKey().toString();
-            int count = item.getAmount();
-            int existing = inventory.has(id) ? inventory.get(id).getAsInt() : 0;
-            inventory.addProperty(id, existing + count);
+        var pdcManager = LapisPlugin.getInstance().getPdcManager();
+        var pdc = player.getPersistentDataContainer();
+
+        JsonObject tags = pdcManager.readAllTags(pdc);
+        if (tags.size() > 0) {
+            obj.add("custom_tags", tags);
         }
-        obj.add("inventory", inventory);
+
+        JsonObject datas = pdcManager.readAllData(pdc);
+        if (datas.size() > 0) {
+            obj.add("custom_data", datas);
+        }
 
         JsonObject nbt = new JsonObject();
         nbt.addProperty("name", player.getName());
@@ -80,7 +81,7 @@ public class EventSerializer {
         return obj;
     }
 
-    private static JsonObject serializeBlock(Block block) {
+    private static JsonObject serializeBlock(org.bukkit.block.Block block) {
         JsonObject obj = new JsonObject();
         obj.addProperty("type", block.getType().getKey().toString());
         obj.addProperty("x", block.getX());

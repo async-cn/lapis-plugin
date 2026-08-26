@@ -2,10 +2,10 @@ package org.asdf.lapisPlugin.tcp;
 
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
-import org.asdf.lapisPlugin.LapisPlugin;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.asdf.lapisPlugin.LapisPlugin;
 
 import java.util.UUID;
 
@@ -38,50 +38,15 @@ public class CommandHandler {
 
         try {
             switch (type) {
-                case "register_event_listener" -> {
-                    String eventType = data.get("event_type").getAsString();
-                    UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
-                    String pkg = data.has("package_name") ? data.get("package_name").getAsString() : packageName;
-                    com.google.gson.JsonObject filter = data.has("filter") ? data.getAsJsonObject("filter") : new com.google.gson.JsonObject();
-                    com.google.gson.JsonArray subscription = data.has("subscription") ? data.getAsJsonArray("subscription") : new com.google.gson.JsonArray();
-
-                    LapisPlugin.getInstance().getEventBridge().register(eventType, pkg, uuid, filter, subscription);
-
-                    response.addProperty("response_type", "register_event_listener_response");
-                    response.addProperty("ok", true);
-                    JsonObject respData = new JsonObject();
-                    respData.addProperty("listener_uuid", uuid.toString());
-                    respData.addProperty("state", "ok");
-                    response.add("data", respData);
-                }
-                case "unregister_event_listener" -> {
-                    UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
-                    LapisPlugin.getInstance().getEventBridge().unregister(uuid);
-
-                    response.addProperty("response_type", "unregister_event_listener_response");
-                    response.addProperty("ok", true);
-                    response.add("data", new JsonObject());
-                }
-                case "send_message" -> {
-                    UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
-                    String message = data.get("message").getAsString();
-
-                    Player player = Bukkit.getPlayer(playerUuid);
-                    if (player != null && player.isOnline()) {
-                        player.sendMessage(message);
-                        response.addProperty("response_type", "send_message_response");
-                        response.addProperty("ok", true);
-                        response.add("data", new JsonObject());
-                    } else {
-                        response.addProperty("response_type", "send_message_response");
-                        response.addProperty("ok", false);
-                        JsonObject errData = new JsonObject();
-                        errData.addProperty("error", "Player not found or offline");
-                        response.add("data", errData);
-                    }
-                }
+                case "register_event_listener" -> handleRegister(data, response);
+                case "unregister_event_listener" -> handleUnregister(data, response);
+                case "send_message" -> handleSendMessage(data, response);
                 case "give_item" -> handleGiveItem(data, response);
                 case "take_item" -> handleTakeItem(data, response);
+                case "set_custom_tag" -> handleSetCustomTag(data, response);
+                case "remove_custom_tag" -> handleRemoveCustomTag(data, response);
+                case "set_custom_data" -> handleSetCustomData(data, response);
+                case "remove_custom_data" -> handleRemoveCustomData(data, response);
                 default -> {
                     response.addProperty("response_type", type + "_response");
                     response.addProperty("ok", false);
@@ -99,6 +64,61 @@ public class CommandHandler {
         }
 
         return response;
+    }
+
+    private static void handleRegister(JsonObject data, JsonObject response) {
+        String eventType = data.get("event_type").getAsString();
+        UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
+        String pkg = data.has("package_name") ? data.get("package_name").getAsString() : "unknown";
+        JsonObject filter = data.has("filter") ? data.getAsJsonObject("filter") : new JsonObject();
+        var subscription = data.has("subscription") ? data.getAsJsonArray("subscription") : new com.google.gson.JsonArray();
+        boolean proxy = data.has("proxy") && data.get("proxy").getAsBoolean();
+
+        String error = LapisPlugin.getInstance().getEventBridge().register(eventType, pkg, uuid, filter, subscription, proxy);
+
+        if (error != null) {
+            response.addProperty("response_type", "register_event_listener_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", error);
+            response.add("data", errData);
+            return;
+        }
+
+        response.addProperty("response_type", "register_event_listener_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("listener_uuid", uuid.toString());
+        respData.addProperty("state", "ok");
+        response.add("data", respData);
+    }
+
+    private static void handleUnregister(JsonObject data, JsonObject response) {
+        UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
+        LapisPlugin.getInstance().getEventBridge().unregister(uuid);
+
+        response.addProperty("response_type", "unregister_event_listener_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
+    }
+
+    private static void handleSendMessage(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        String message = data.get("message").getAsString();
+
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player != null && player.isOnline()) {
+            player.sendMessage(message);
+            response.addProperty("response_type", "send_message_response");
+            response.addProperty("ok", true);
+            response.add("data", new JsonObject());
+        } else {
+            response.addProperty("response_type", "send_message_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", "Player not found or offline");
+            response.add("data", errData);
+        }
     }
 
     private static void handleGiveItem(JsonObject data, JsonObject response) {
@@ -180,29 +200,97 @@ public class CommandHandler {
         response.add("data", respData);
     }
 
-    private static void handleRegister(JsonObject data, JsonObject response) {
-        String eventType = data.get("event_type").getAsString();
-        UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
-        String packageName = data.has("package_name") ? data.get("package_name").getAsString() : "unknown";
-        JsonObject filter = data.has("filter") ? data.getAsJsonObject("filter") : new JsonObject();
-        var subscription = data.has("subscription") ? data.getAsJsonArray("subscription") : new com.google.gson.JsonArray();
+    private static void handleSetCustomTag(JsonObject data, JsonObject response) {
+        String targetType = data.get("target_type").getAsString();
+        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
+        String packageName = data.get("package_name").getAsString();
+        String tagName = data.get("tag_name").getAsString();
+        String tagValue = data.get("tag_value").getAsString();
 
-        String error = LapisPlugin.getInstance().getEventBridge().register(eventType, packageName, uuid, filter, subscription);
+        var pdcManager = LapisPlugin.getInstance().getPdcManager();
 
-        if (error != null) {
-            response.addProperty("response_type", "register_event_listener_response");
-            response.addProperty("ok", false);
-            JsonObject errData = new JsonObject();
-            errData.addProperty("error", error);
-            response.add("data", errData);
-            return;
+        if ("player".equals(targetType)) {
+            Player player = Bukkit.getPlayer(targetUuid);
+            if (player == null || !player.isOnline()) {
+                response.addProperty("response_type", "set_custom_tag_response");
+                response.addProperty("ok", false);
+                JsonObject err = new JsonObject();
+                err.addProperty("error", "Player not found or offline");
+                response.add("data", err);
+                return;
+            }
+            pdcManager.setTag(player.getPersistentDataContainer(), packageName, tagName, tagValue);
         }
 
-        response.addProperty("response_type", "register_event_listener_response");
+        response.addProperty("response_type", "set_custom_tag_response");
         response.addProperty("ok", true);
-        JsonObject respData = new JsonObject();
-        respData.addProperty("listener_uuid", uuid.toString());
-        respData.addProperty("state", "ok");
-        response.add("data", respData);
+        response.add("data", new JsonObject());
+    }
+
+    private static void handleRemoveCustomTag(JsonObject data, JsonObject response) {
+        String targetType = data.get("target_type").getAsString();
+        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
+        String packageName = data.get("package_name").getAsString();
+        String tagName = data.get("tag_name").getAsString();
+
+        var pdcManager = LapisPlugin.getInstance().getPdcManager();
+
+        if ("player".equals(targetType)) {
+            Player player = Bukkit.getPlayer(targetUuid);
+            if (player != null && player.isOnline()) {
+                pdcManager.removeTag(player.getPersistentDataContainer(), packageName, tagName);
+            }
+        }
+
+        response.addProperty("response_type", "remove_custom_tag_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
+    }
+
+    private static void handleSetCustomData(JsonObject data, JsonObject response) {
+        String targetType = data.get("target_type").getAsString();
+        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
+        String packageName = data.get("package_name").getAsString();
+        String dataName = data.get("data_name").getAsString();
+        String dataValue = data.get("data_value").getAsString();
+
+        var pdcManager = LapisPlugin.getInstance().getPdcManager();
+
+        if ("player".equals(targetType)) {
+            Player player = Bukkit.getPlayer(targetUuid);
+            if (player == null || !player.isOnline()) {
+                response.addProperty("response_type", "set_custom_data_response");
+                response.addProperty("ok", false);
+                JsonObject err = new JsonObject();
+                err.addProperty("error", "Player not found or offline");
+                response.add("data", err);
+                return;
+            }
+            pdcManager.setData(player.getPersistentDataContainer(), packageName, dataName, dataValue);
+        }
+
+        response.addProperty("response_type", "set_custom_data_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
+    }
+
+    private static void handleRemoveCustomData(JsonObject data, JsonObject response) {
+        String targetType = data.get("target_type").getAsString();
+        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
+        String packageName = data.get("package_name").getAsString();
+        String dataName = data.get("data_name").getAsString();
+
+        var pdcManager = LapisPlugin.getInstance().getPdcManager();
+
+        if ("player".equals(targetType)) {
+            Player player = Bukkit.getPlayer(targetUuid);
+            if (player != null && player.isOnline()) {
+                pdcManager.removeData(player.getPersistentDataContainer(), packageName, dataName);
+            }
+        }
+
+        response.addProperty("response_type", "remove_custom_data_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
     }
 }
