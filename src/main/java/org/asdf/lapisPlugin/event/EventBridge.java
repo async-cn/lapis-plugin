@@ -4,10 +4,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
 import org.bukkit.event.Event;
-import org.bukkit.event.EventHandler;
+import org.bukkit.plugin.EventExecutor;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.asdf.lapisPlugin.LapisPlugin;
 import org.asdf.lapisPlugin.filter.FilterEngine;
@@ -26,6 +26,10 @@ public class EventBridge {
     }
 
     public void register(String eventType, String packageName, UUID uuid, JsonObject filter, JsonArray subscription) {
+        if (!EventTypeMap.isSupported(eventType)) {
+            plugin.getLogger().warning("Unsupported event type: " + eventType);
+            return;
+        }
         registry.computeIfAbsent(eventType, k -> new ArrayList<>())
                 .add(new ListenerInfo(uuid, packageName, filter, subscription));
 
@@ -59,21 +63,21 @@ public class EventBridge {
     }
 
     private void registerBukkitListener(String eventType) {
-        Listener listener;
-        switch (eventType) {
-            case "PlayerJoin" -> listener = new Listener() {
-                @EventHandler
-                public void onJoin(PlayerJoinEvent event) {
-                    handleEvent("PlayerJoin", event);
-                }
-            };
-            default -> {
-                plugin.getLogger().warning("Unknown event type: " + eventType);
-                return;
-            }
-        }
+        Class<? extends Event> eventClass = EventTypeMap.get(eventType);
+        if (eventClass == null) return;
 
-        Bukkit.getPluginManager().registerEvents(listener, plugin);
+        // 用 EventExecutor 注册，不需要 @EventHandler
+        Listener listener = new Listener() {};
+        EventExecutor executor = (l, event) -> handleEvent(eventType, event);
+
+        Bukkit.getPluginManager().registerEvent(
+                eventClass,
+                listener,
+                EventPriority.NORMAL,
+                executor,
+                plugin
+        );
+
         activeListeners.put(eventType, listener);
     }
 
@@ -88,7 +92,7 @@ public class EventBridge {
         List<ListenerInfo> listeners = registry.get(eventType);
         if (listeners == null || listeners.isEmpty()) return;
 
-        JsonObject innerData = EventSerializer.serialize(event);
+        JsonObject innerData = EventSerializer.serialize(eventType, event);
 
         for (ListenerInfo info : listeners) {
             if (!FilterEngine.evaluate(info.filter, innerData)) continue;
