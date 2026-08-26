@@ -131,7 +131,10 @@ public class TcpManager {
         } catch (IOException e) {
             plugin.getLogger().warning("Client error: " + e.getMessage());
         } finally {
-            if (packageName != null) sessions.remove(packageName);
+            if (packageName != null) {
+                sessions.remove(packageName);
+                LapisPlugin.getInstance().getEventBridge().unregisterAllByPackage(packageName);
+            }
             closeQuietly(socket);
         }
     }
