@@ -88,21 +88,21 @@ public class EventBridge {
         List<ListenerInfo> listeners = registry.get(eventType);
         if (listeners == null || listeners.isEmpty()) return;
 
-        JsonObject data = EventSerializer.serialize(event);
+        JsonObject innerData = EventSerializer.serialize(event);
 
         for (ListenerInfo info : listeners) {
-            if (!FilterEngine.evaluate(info.filter, data)) continue;
+            if (!FilterEngine.evaluate(info.filter, innerData)) continue;
 
-            JsonObject payload = SubscriptionExtractor.apply(data, info.subscription);
+            JsonObject payload = SubscriptionExtractor.apply(innerData, info.subscription);
 
-            JsonObject innerData = new JsonObject();
-            innerData.addProperty("event_type", eventType);
-            innerData.addProperty("listener_uuid", info.uuid.toString());
-            innerData.add("data", payload);
+            JsonObject outerData = new JsonObject();
+            outerData.addProperty("event_type", eventType);
+            outerData.addProperty("listener_uuid", info.uuid.toString());
+            outerData.add("data", payload);
 
             JsonObject message = new JsonObject();
             message.addProperty("message_type", "event");
-            message.add("data", innerData);
+            message.add("data", outerData);
 
             LapisPlugin.getInstance().getTcpManager().sendEvent(info.packageName, message);
         }
