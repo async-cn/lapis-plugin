@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.asdf.lapisPlugin.LapisPlugin;
+import org.bukkit.Material;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.UUID;
 
@@ -78,6 +80,8 @@ public class CommandHandler {
                         response.add("data", errData);
                     }
                 }
+                case "give_item" -> handleGiveItem(data, response);
+                case "take_item" -> handleTakeItem(data, response);
                 default -> {
                     response.addProperty("response_type", type + "_response");
                     response.addProperty("ok", false);
@@ -95,6 +99,85 @@ public class CommandHandler {
         }
 
         return response;
+    }
+
+    private static void handleGiveItem(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        String itemId = data.get("item_id").getAsString();
+        int count = data.has("count") ? data.get("count").getAsInt() : 1;
+
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            response.addProperty("response_type", "give_item_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", "Player not found or offline");
+            response.add("data", errData);
+            return;
+        }
+
+        Material material = Material.matchMaterial(itemId);
+        if (material == null) {
+            response.addProperty("response_type", "give_item_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", "Unknown item: " + itemId);
+            response.add("data", errData);
+            return;
+        }
+
+        ItemStack item = new ItemStack(material, count);
+        player.getInventory().addItem(item);
+        response.addProperty("response_type", "give_item_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
+    }
+
+    private static void handleTakeItem(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        String itemId = data.get("item_id").getAsString();
+        int count = data.has("count") ? data.get("count").getAsInt() : 1;
+
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            response.addProperty("response_type", "take_item_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", "Player not found or offline");
+            response.add("data", errData);
+            return;
+        }
+
+        Material material = Material.matchMaterial(itemId);
+        boolean success = false;
+
+        if (material != null) {
+            int removed = 0;
+            for (ItemStack item : player.getInventory().getStorageContents()) {
+                if (item == null || item.getType() != material) continue;
+
+                int amount = item.getAmount();
+                int need = count - removed;
+
+                if (amount <= need) {
+                    removed += amount;
+                    player.getInventory().remove(item);
+                } else {
+                    item.setAmount(amount - need);
+                    removed = count;
+                    break;
+                }
+
+                if (removed >= count) break;
+            }
+            success = removed >= count;
+        }
+
+        response.addProperty("response_type", "take_item_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("is_success", success);
+        response.add("data", respData);
     }
 
     private static void handleRegister(JsonObject data, JsonObject response) {
