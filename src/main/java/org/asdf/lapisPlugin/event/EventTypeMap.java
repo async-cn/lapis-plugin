@@ -22,6 +22,7 @@ public class EventTypeMap {
         register("BlockBreak", BlockBreakEvent.class);
         register("BlockPlace", BlockPlaceEvent.class);
         register("PlayerChat", AsyncPlayerChatEvent.class);
+        register("PlayerInteract", org.bukkit.event.player.PlayerInteractEvent.class);
         // 以后加事件就这里加一行
     }
 

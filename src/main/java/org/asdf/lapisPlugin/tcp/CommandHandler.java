@@ -6,6 +6,9 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.asdf.lapisPlugin.LapisPlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 import java.util.UUID;
 
@@ -47,6 +50,8 @@ public class CommandHandler {
                 case "remove_custom_tag" -> handleRemoveCustomTag(data, response);
                 case "set_custom_data" -> handleSetCustomData(data, response);
                 case "remove_custom_data" -> handleRemoveCustomData(data, response);
+                case "execute_command" -> handleExecuteCommand(data, response);
+                case "set_block" -> handleSetBlock(data, response);
                 default -> {
                     response.addProperty("response_type", type + "_response");
                     response.addProperty("ok", false);
@@ -64,6 +69,52 @@ public class CommandHandler {
         }
 
         return response;
+    }
+
+    private static void handleExecuteCommand(JsonObject data, JsonObject response) {
+        String command = data.get("command").getAsString();
+
+        StringBuilder output = new StringBuilder();
+        org.bukkit.command.CommandSender sender = Bukkit.createCommandSender(component -> {
+            String text = PlainTextComponentSerializer.plainText().serialize(component);
+            output.append(text).append("\n");
+        });
+
+        boolean success = Bukkit.dispatchCommand(sender, command);
+
+        response.addProperty("response_type", "execute_command_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        String result = output.toString().trim();
+        respData.addProperty("result", result.isEmpty() ? (success ? "Command executed successfully" : "Command execution failed") : result);
+        response.add("data", respData);
+    }
+
+    private static void handleSetBlock(JsonObject data, JsonObject response) {
+        String blockId = data.get("block_id").getAsString();
+        com.google.gson.JsonArray pos = data.getAsJsonArray("pos");
+        int x = pos.get(0).getAsInt();
+        int y = pos.get(1).getAsInt();
+        int z = pos.get(2).getAsInt();
+
+        org.bukkit.Material material = org.bukkit.Material.matchMaterial(blockId);
+        if (material == null) {
+            response.addProperty("response_type", "set_block_response");
+            response.addProperty("ok", false);
+            JsonObject err = new JsonObject();
+            err.addProperty("error", "Unknown block: " + blockId);
+            response.add("data", err);
+            return;
+        }
+
+        org.bukkit.World world = Bukkit.getWorlds().get(0);
+        org.bukkit.Location loc = new org.bukkit.Location(world, x, y, z);
+        loc.getBlock().setType(material);
+
+        // TODO: 应用 block_state 和 nbt
+
+        response.addProperty("response_type", "set_block_response");
+        response.add("data", new JsonObject());
     }
 
     private static void handleRegister(JsonObject data, JsonObject response) {
@@ -104,19 +155,35 @@ public class CommandHandler {
 
     private static void handleSendMessage(JsonObject data, JsonObject response) {
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
-        String message = data.get("message").getAsString();
+        String messageType = data.has("message_type") ? data.get("message_type").getAsString() : "pure_text";
+        String messageContent = data.get("message_content").getAsString();
 
         Player player = Bukkit.getPlayer(playerUuid);
-        if (player != null && player.isOnline()) {
-            player.sendMessage(message);
-            response.addProperty("response_type", "send_message_response");
-            response.addProperty("ok", true);
-            response.add("data", new JsonObject());
-        } else {
+        if (player == null || !player.isOnline()) {
             response.addProperty("response_type", "send_message_response");
             response.addProperty("ok", false);
             JsonObject errData = new JsonObject();
             errData.addProperty("error", "Player not found or offline");
+            response.add("data", errData);
+            return;
+        }
+
+        try {
+            if ("text_component".equals(messageType)) {
+                Component component = GsonComponentSerializer.gson().deserialize(messageContent);
+                player.sendMessage(component);
+            } else {
+                player.sendMessage(Component.text(messageContent));
+            }
+
+            response.addProperty("response_type", "send_message_response");
+            response.addProperty("ok", true);
+            response.add("data", new JsonObject());
+        } catch (Exception e) {
+            response.addProperty("response_type", "send_message_response");
+            response.addProperty("ok", false);
+            JsonObject errData = new JsonObject();
+            errData.addProperty("error", "Invalid message format: " + e.getMessage());
             response.add("data", errData);
         }
     }

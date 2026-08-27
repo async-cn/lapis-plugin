@@ -7,3 +7,4 @@ enabled-events:
   - BlockBreak
   - BlockPlace
   - PlayerChat
+  - PlayerInteract

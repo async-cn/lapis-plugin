@@ -19,6 +19,7 @@ public class EventSerializer {
             case "BlockBreak" -> serializeBlockBreak((BlockBreakEvent) event);
             case "BlockPlace" -> serializeBlockPlace((BlockPlaceEvent) event);
             case "PlayerChat" -> serializePlayerChat((AsyncPlayerChatEvent) event);
+            case "PlayerInteract" -> serializePlayerInteract((org.bukkit.event.player.PlayerInteractEvent) event);
             default -> new JsonObject();
         };
     }
@@ -91,5 +92,25 @@ public class EventSerializer {
         JsonObject nbt = new JsonObject();
         obj.add("nbt", nbt);
         return obj;
+    }
+
+    private static JsonObject serializePlayerInteract(org.bukkit.event.player.PlayerInteractEvent e) {
+        JsonObject data = new JsonObject();
+        data.add("player", serializePlayer(e.getPlayer()));
+
+        String interactionType = switch (e.getAction()) {
+            case LEFT_CLICK_BLOCK -> "left_click";
+            case RIGHT_CLICK_BLOCK -> "right_click";
+            case LEFT_CLICK_AIR -> "left_click_air";
+            case RIGHT_CLICK_AIR -> "right_click_air";
+            case PHYSICAL -> "physical";
+        };
+        data.addProperty("interaction_type", interactionType);
+
+        if (e.getClickedBlock() != null) {
+            data.add("block", serializeBlock(e.getClickedBlock()));
+        }
+
+        return data;
     }
 }
