@@ -65,11 +65,6 @@ public class EventSerializer {
         var pdcManager = LapisPlugin.getInstance().getPdcManager();
         var pdc = player.getPersistentDataContainer();
 
-        JsonObject tags = pdcManager.readAllTags(pdc);
-        if (tags.size() > 0) {
-            obj.add("custom_tags", tags);
-        }
-
         JsonObject datas = pdcManager.readAllData(pdc);
         if (datas.size() > 0) {
             obj.add("custom_data", datas);

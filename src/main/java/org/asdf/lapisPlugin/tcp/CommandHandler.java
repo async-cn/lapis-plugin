@@ -1,15 +1,25 @@
 package org.asdf.lapisPlugin.tcp;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.TileState;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.asdf.lapisPlugin.LapisPlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class CommandHandler {
@@ -44,14 +54,12 @@ public class CommandHandler {
                 case "register_event_listener" -> handleRegister(data, response);
                 case "unregister_event_listener" -> handleUnregister(data, response);
                 case "send_message" -> handleSendMessage(data, response);
-                case "give_item" -> handleGiveItem(data, response);
+                case "give_item" -> handleGiveItem(data, response, packageName);
                 case "take_item" -> handleTakeItem(data, response);
-                case "set_custom_tag" -> handleSetCustomTag(data, response);
-                case "remove_custom_tag" -> handleRemoveCustomTag(data, response);
                 case "set_custom_data" -> handleSetCustomData(data, response);
                 case "remove_custom_data" -> handleRemoveCustomData(data, response);
                 case "execute_command" -> handleExecuteCommand(data, response);
-                case "set_block" -> handleSetBlock(data, response);
+                case "set_block" -> handleSetBlock(data, response, packageName);
                 default -> {
                     response.addProperty("response_type", type + "_response");
                     response.addProperty("ok", false);
@@ -70,6 +78,72 @@ public class CommandHandler {
 
         return response;
     }
+
+
+    private record PdcTarget(PersistentDataContainer pdc, TileState tileState) {
+        void update() {
+            if (tileState != null) tileState.update();
+        }
+    }
+
+    private static void errorResponse(JsonObject response, String responseType, String error) {
+        response.addProperty("response_type", responseType);
+        response.addProperty("ok", false);
+        JsonObject err = new JsonObject();
+        err.addProperty("error", error);
+        response.add("data", err);
+    }
+
+    private static PdcTarget resolveTarget(JsonObject data, JsonObject response, String responseType) {
+        String targetType = data.get("target_type").getAsString();
+        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
+
+        switch (targetType) {
+            case "player" -> {
+                Player player = Bukkit.getPlayer(targetUuid);
+                if (player == null || !player.isOnline()) {
+                    errorResponse(response, responseType, "Player not found or offline");
+                    return null;
+                }
+                return new PdcTarget(player.getPersistentDataContainer(), null);
+            }
+            case "entity" -> {
+                Entity entity = Bukkit.getEntity(targetUuid);
+                if (entity == null) {
+                    errorResponse(response, responseType, "Entity not found");
+                    return null;
+                }
+                return new PdcTarget(entity.getPersistentDataContainer(), null);
+            }
+            case "block" -> {
+                String worldName = data.has("world") ? data.get("world").getAsString() : null;
+                JsonArray pos = data.has("pos") ? data.getAsJsonArray("pos") : null;
+                if (pos == null || pos.size() < 3) {
+                    errorResponse(response, responseType, "Block position required [x,y,z]");
+                    return null;
+                }
+                World world = worldName != null ? Bukkit.getWorld(worldName) : Bukkit.getWorlds().get(0);
+                if (world == null) {
+                    errorResponse(response, responseType, "Unknown world");
+                    return null;
+                }
+                Block block = world.getBlockAt(
+                        pos.get(0).getAsInt(), pos.get(1).getAsInt(), pos.get(2).getAsInt()
+                );
+                BlockState state = block.getState();
+                if (!(state instanceof TileState tileState)) {
+                    errorResponse(response, responseType, "Block does not support data (not a tile entity)");
+                    return null;
+                }
+                return new PdcTarget(tileState.getPersistentDataContainer(), tileState);
+            }
+            default -> {
+                errorResponse(response, responseType, "Unknown target_type: " + targetType);
+                return null;
+            }
+        }
+    }
+
 
     private static void handleExecuteCommand(JsonObject data, JsonObject response) {
         String command = data.get("command").getAsString();
@@ -90,30 +164,56 @@ public class CommandHandler {
         response.add("data", respData);
     }
 
-    private static void handleSetBlock(JsonObject data, JsonObject response) {
+    private static void handleSetBlock(JsonObject data, JsonObject response, String packageName) {
         String blockId = data.get("block_id").getAsString();
-        com.google.gson.JsonArray pos = data.getAsJsonArray("pos");
+        JsonArray pos = data.getAsJsonArray("pos");
         int x = pos.get(0).getAsInt();
         int y = pos.get(1).getAsInt();
         int z = pos.get(2).getAsInt();
+        String worldName = data.has("world") ? data.get("world").getAsString() : null;
+        String blockStateStr = data.has("block_state") ? data.get("block_state").getAsString() : null;
+        JsonObject nbt = data.has("nbt") ? data.getAsJsonObject("nbt") : null;
 
-        org.bukkit.Material material = org.bukkit.Material.matchMaterial(blockId);
-        if (material == null) {
-            response.addProperty("response_type", "set_block_response");
-            response.addProperty("ok", false);
-            JsonObject err = new JsonObject();
-            err.addProperty("error", "Unknown block: " + blockId);
-            response.add("data", err);
+        World world = worldName != null ? Bukkit.getWorld(worldName) : Bukkit.getWorlds().get(0);
+        if (world == null) {
+            errorResponse(response, "set_block_response", "Unknown world: " + worldName);
             return;
         }
 
-        org.bukkit.World world = Bukkit.getWorlds().get(0);
-        org.bukkit.Location loc = new org.bukkit.Location(world, x, y, z);
-        loc.getBlock().setType(material);
+        Material material = Material.matchMaterial(blockId);
+        if (material == null) {
+            errorResponse(response, "set_block_response", "Unknown block: " + blockId);
+            return;
+        }
 
-        // TODO: 应用 block_state 和 nbt
+        Block block = world.getBlockAt(x, y, z);
+
+        if (blockStateStr != null && !blockStateStr.isEmpty()) {
+            try {
+                org.bukkit.block.data.BlockData bd = Bukkit.createBlockData(blockId + "[" + blockStateStr + "]");
+                block.setBlockData(bd);
+            } catch (IllegalArgumentException e) {
+                errorResponse(response, "set_block_response", "Invalid block_state: " + e.getMessage());
+                return;
+            }
+        } else {
+            block.setType(material);
+        }
+
+        if (nbt != null && !nbt.isEmpty()) {
+            BlockState state = block.getState();
+            if (state instanceof TileState tileState) {
+                var pdc = tileState.getPersistentDataContainer();
+                var pdcManager = LapisPlugin.getInstance().getPdcManager();
+                for (var entry : nbt.entrySet()) {
+                    pdcManager.setData(pdc, packageName, entry.getKey(), entry.getValue());
+                }
+                tileState.update();
+            }
+        }
 
         response.addProperty("response_type", "set_block_response");
+        response.addProperty("ok", true);
         response.add("data", new JsonObject());
     }
 
@@ -122,7 +222,7 @@ public class CommandHandler {
         UUID uuid = UUID.fromString(data.get("listener_uuid").getAsString());
         String pkg = data.has("package_name") ? data.get("package_name").getAsString() : "unknown";
         JsonObject filter = data.has("filter") ? data.getAsJsonObject("filter") : new JsonObject();
-        var subscription = data.has("subscription") ? data.getAsJsonArray("subscription") : new com.google.gson.JsonArray();
+        var subscription = data.has("subscription") ? data.getAsJsonArray("subscription") : new JsonArray();
         boolean proxy = data.has("proxy") && data.get("proxy").getAsBoolean();
 
         String error = LapisPlugin.getInstance().getEventBridge().register(eventType, pkg, uuid, filter, subscription, proxy);
@@ -160,11 +260,7 @@ public class CommandHandler {
 
         Player player = Bukkit.getPlayer(playerUuid);
         if (player == null || !player.isOnline()) {
-            response.addProperty("response_type", "send_message_response");
-            response.addProperty("ok", false);
-            JsonObject errData = new JsonObject();
-            errData.addProperty("error", "Player not found or offline");
-            response.add("data", errData);
+            errorResponse(response, "send_message_response", "Player not found or offline");
             return;
         }
 
@@ -180,40 +276,52 @@ public class CommandHandler {
             response.addProperty("ok", true);
             response.add("data", new JsonObject());
         } catch (Exception e) {
-            response.addProperty("response_type", "send_message_response");
-            response.addProperty("ok", false);
-            JsonObject errData = new JsonObject();
-            errData.addProperty("error", "Invalid message format: " + e.getMessage());
-            response.add("data", errData);
+            errorResponse(response, "send_message_response", "Invalid message format: " + e.getMessage());
         }
     }
 
-    private static void handleGiveItem(JsonObject data, JsonObject response) {
+    private static void handleGiveItem(JsonObject data, JsonObject response, String packageName) {
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
         String itemId = data.get("item_id").getAsString();
         int count = data.has("count") ? data.get("count").getAsInt() : 1;
+        String displayName = data.has("display_name") ? data.get("display_name").getAsString() : null;
+        JsonArray loreArray = data.has("lore") ? data.getAsJsonArray("lore") : null;
+        JsonObject nbt = data.has("nbt") ? data.getAsJsonObject("nbt") : null;
 
         Player player = Bukkit.getPlayer(playerUuid);
         if (player == null || !player.isOnline()) {
-            response.addProperty("response_type", "give_item_response");
-            response.addProperty("ok", false);
-            JsonObject errData = new JsonObject();
-            errData.addProperty("error", "Player not found or offline");
-            response.add("data", errData);
+            errorResponse(response, "give_item_response", "Player not found or offline");
             return;
         }
 
         Material material = Material.matchMaterial(itemId);
         if (material == null) {
-            response.addProperty("response_type", "give_item_response");
-            response.addProperty("ok", false);
-            JsonObject errData = new JsonObject();
-            errData.addProperty("error", "Unknown item: " + itemId);
-            response.add("data", errData);
+            errorResponse(response, "give_item_response", "Unknown item: " + itemId);
             return;
         }
 
         ItemStack item = new ItemStack(material, count);
+
+        item.editMeta(meta -> {
+            if (displayName != null) {
+                meta.displayName(GsonComponentSerializer.gson().deserialize(displayName));
+            }
+            if (loreArray != null) {
+                List<Component> lore = new ArrayList<>();
+                for (var elem : loreArray) {
+                    lore.add(GsonComponentSerializer.gson().deserialize(elem.getAsString()));
+                }
+                meta.lore(lore);
+            }
+            if (nbt != null) {
+                var pdc = meta.getPersistentDataContainer();
+                var pdcManager = LapisPlugin.getInstance().getPdcManager();
+                for (var entry : nbt.entrySet()) {
+                    pdcManager.setData(pdc, packageName, entry.getKey(), entry.getValue());
+                }
+            }
+        });
+
         player.getInventory().addItem(item);
         response.addProperty("response_type", "give_item_response");
         response.addProperty("ok", true);
@@ -227,11 +335,7 @@ public class CommandHandler {
 
         Player player = Bukkit.getPlayer(playerUuid);
         if (player == null || !player.isOnline()) {
-            response.addProperty("response_type", "take_item_response");
-            response.addProperty("ok", false);
-            JsonObject errData = new JsonObject();
-            errData.addProperty("error", "Player not found or offline");
-            response.add("data", errData);
+            errorResponse(response, "take_item_response", "Player not found or offline");
             return;
         }
 
@@ -239,25 +343,23 @@ public class CommandHandler {
         boolean success = false;
 
         if (material != null) {
-            int removed = 0;
-            for (ItemStack item : player.getInventory().getStorageContents()) {
+            int remaining = count;
+            ItemStack[] contents = player.getInventory().getStorageContents();
+            for (int i = 0; i < contents.length && remaining > 0; i++) {
+                ItemStack item = contents[i];
                 if (item == null || item.getType() != material) continue;
 
                 int amount = item.getAmount();
-                int need = count - removed;
-
-                if (amount <= need) {
-                    removed += amount;
-                    player.getInventory().remove(item);
+                if (amount <= remaining) {
+                    remaining -= amount;
+                    contents[i] = null;
                 } else {
-                    item.setAmount(amount - need);
-                    removed = count;
-                    break;
+                    item.setAmount(amount - remaining);
+                    remaining = 0;
                 }
-
-                if (removed >= count) break;
             }
-            success = removed >= count;
+            player.getInventory().setStorageContents(contents);
+            success = remaining == 0;
         }
 
         response.addProperty("response_type", "take_item_response");
@@ -267,74 +369,16 @@ public class CommandHandler {
         response.add("data", respData);
     }
 
-    private static void handleSetCustomTag(JsonObject data, JsonObject response) {
-        String targetType = data.get("target_type").getAsString();
-        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
-        String packageName = data.get("package_name").getAsString();
-        String tagName = data.get("tag_name").getAsString();
-        String tagValue = data.get("tag_value").getAsString();
-
-        var pdcManager = LapisPlugin.getInstance().getPdcManager();
-
-        if ("player".equals(targetType)) {
-            Player player = Bukkit.getPlayer(targetUuid);
-            if (player == null || !player.isOnline()) {
-                response.addProperty("response_type", "set_custom_tag_response");
-                response.addProperty("ok", false);
-                JsonObject err = new JsonObject();
-                err.addProperty("error", "Player not found or offline");
-                response.add("data", err);
-                return;
-            }
-            pdcManager.setTag(player.getPersistentDataContainer(), packageName, tagName, tagValue);
-        }
-
-        response.addProperty("response_type", "set_custom_tag_response");
-        response.addProperty("ok", true);
-        response.add("data", new JsonObject());
-    }
-
-    private static void handleRemoveCustomTag(JsonObject data, JsonObject response) {
-        String targetType = data.get("target_type").getAsString();
-        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
-        String packageName = data.get("package_name").getAsString();
-        String tagName = data.get("tag_name").getAsString();
-
-        var pdcManager = LapisPlugin.getInstance().getPdcManager();
-
-        if ("player".equals(targetType)) {
-            Player player = Bukkit.getPlayer(targetUuid);
-            if (player != null && player.isOnline()) {
-                pdcManager.removeTag(player.getPersistentDataContainer(), packageName, tagName);
-            }
-        }
-
-        response.addProperty("response_type", "remove_custom_tag_response");
-        response.addProperty("ok", true);
-        response.add("data", new JsonObject());
-    }
-
     private static void handleSetCustomData(JsonObject data, JsonObject response) {
-        String targetType = data.get("target_type").getAsString();
-        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
         String packageName = data.get("package_name").getAsString();
-        String dataName = data.get("data_name").getAsString();
-        String dataValue = data.get("data_value").getAsString();
+        String dataKey = data.get("data_key").getAsString();
+        JsonElement dataValue = data.get("data_value");
 
-        var pdcManager = LapisPlugin.getInstance().getPdcManager();
+        PdcTarget target = resolveTarget(data, response, "set_custom_data_response");
+        if (target == null) return;
 
-        if ("player".equals(targetType)) {
-            Player player = Bukkit.getPlayer(targetUuid);
-            if (player == null || !player.isOnline()) {
-                response.addProperty("response_type", "set_custom_data_response");
-                response.addProperty("ok", false);
-                JsonObject err = new JsonObject();
-                err.addProperty("error", "Player not found or offline");
-                response.add("data", err);
-                return;
-            }
-            pdcManager.setData(player.getPersistentDataContainer(), packageName, dataName, dataValue);
-        }
+        LapisPlugin.getInstance().getPdcManager().setData(target.pdc(), packageName, dataKey, dataValue);
+        target.update();
 
         response.addProperty("response_type", "set_custom_data_response");
         response.addProperty("ok", true);
@@ -342,19 +386,14 @@ public class CommandHandler {
     }
 
     private static void handleRemoveCustomData(JsonObject data, JsonObject response) {
-        String targetType = data.get("target_type").getAsString();
-        UUID targetUuid = UUID.fromString(data.get("target_uuid").getAsString());
         String packageName = data.get("package_name").getAsString();
-        String dataName = data.get("data_name").getAsString();
+        String dataKey = data.get("data_key").getAsString();
 
-        var pdcManager = LapisPlugin.getInstance().getPdcManager();
+        PdcTarget target = resolveTarget(data, response, "remove_custom_data_response");
+        if (target == null) return;
 
-        if ("player".equals(targetType)) {
-            Player player = Bukkit.getPlayer(targetUuid);
-            if (player != null && player.isOnline()) {
-                pdcManager.removeData(player.getPersistentDataContainer(), packageName, dataName);
-            }
-        }
+        LapisPlugin.getInstance().getPdcManager().removeData(target.pdc(), packageName, dataKey);
+        target.update();
 
         response.addProperty("response_type", "remove_custom_data_response");
         response.addProperty("ok", true);
