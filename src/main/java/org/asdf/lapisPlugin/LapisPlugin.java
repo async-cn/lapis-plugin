@@ -1,6 +1,8 @@
 package org.asdf.lapisPlugin;
 
+import net.milkbowl.vault.economy.Economy;
 import org.asdf.lapisPlugin.pdc.PdcManager;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.asdf.lapisPlugin.command.LapisCommand;
 import org.asdf.lapisPlugin.config.EventConfig;
@@ -16,6 +18,7 @@ public class LapisPlugin extends JavaPlugin {
     private LanguageManager languageManager;
     private EventConfig eventConfig;
     private PdcManager pdcManager;
+    private Economy economy;
 
     @Override
     public void onEnable() {
@@ -29,6 +32,8 @@ public class LapisPlugin extends JavaPlugin {
         this.languageManager.load(getConfig().getString("language", "zhcn"));
 
         pdcManager = new PdcManager(this);
+
+        setupEconomy();
 
         int port = getConfig().getInt("tcp-port", 9331);
 
@@ -50,6 +55,21 @@ public class LapisPlugin extends JavaPlugin {
         }
         getLogger().info("Lapis disabled");
     }
+
+    private void setupEconomy() {
+        if (getServer().getPluginManager().getPlugin("Vault") == null) {
+            getLogger().warning("Vault not found, economy commands will be unavailable");
+            return;
+        }
+        RegisteredServiceProvider<Economy> rsp = getServer().getServicesManager().getRegistration(Economy.class);
+        if (rsp == null) {
+            getLogger().warning("No economy provider found, economy commands will be unavailable");
+            return;
+        }
+        economy = rsp.getProvider();
+        getLogger().info("Economy provider: " + economy.getName());
+    }
+
 
     public static LapisPlugin getInstance() {
         return instance;
@@ -73,5 +93,13 @@ public class LapisPlugin extends JavaPlugin {
 
     public PdcManager getPdcManager() {
         return pdcManager;
+    }
+
+    public Economy getEconomy() {
+        return economy;
+    }
+
+    public boolean hasEconomy() {
+        return economy != null;
     }
 }

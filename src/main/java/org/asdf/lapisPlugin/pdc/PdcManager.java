@@ -51,14 +51,20 @@ public class PdcManager {
         String name = dataKey.toLowerCase();
         NamespacedKey key = new NamespacedKey(NAMESPACE, DATA_PREFIX + pkg + "_" + name);
 
-        Integer i = pdc.get(key, PersistentDataType.INTEGER);
-        if (i != null) return new JsonPrimitive(i);
+        try {
+            Integer i = pdc.get(key, PersistentDataType.INTEGER);
+            if (i != null) return new JsonPrimitive(i);
+        } catch (IllegalArgumentException ignored) {}
 
-        Double d = pdc.get(key, PersistentDataType.DOUBLE);
-        if (d != null) return new JsonPrimitive(d);
+        try {
+            Double d = pdc.get(key, PersistentDataType.DOUBLE);
+            if (d != null) return new JsonPrimitive(d);
+        } catch (IllegalArgumentException ignored) {}
 
-        String s = pdc.get(key, PersistentDataType.STRING);
-        if (s != null) return new JsonPrimitive(s);
+        try {
+            String s = pdc.get(key, PersistentDataType.STRING);
+            if (s != null) return new JsonPrimitive(s);
+        } catch (IllegalArgumentException ignored) {}
 
         return null;
     }
@@ -84,22 +90,31 @@ public class PdcManager {
             String pkg = raw.substring(0, sep);
             String dataKey = raw.substring(sep + 1);
 
-            JsonElement value = null;
-            Integer i = pdc.get(key, PersistentDataType.INTEGER);
-            if (i != null) value = new JsonPrimitive(i);
-            if (value == null) {
-                Double d = pdc.get(key, PersistentDataType.DOUBLE);
-                if (d != null) value = new JsonPrimitive(d);
-            }
-            if (value == null) {
-                String s = pdc.get(key, PersistentDataType.STRING);
-                if (s != null) value = new JsonPrimitive(s);
-            }
+            JsonElement value = tryGetValue(pdc, key);
             if (value == null) continue;
 
             if (!result.has(pkg)) result.add(pkg, new JsonObject());
             result.getAsJsonObject(pkg).add(dataKey, value);
         }
         return result;
+    }
+
+    private JsonElement tryGetValue(PersistentDataContainer pdc, NamespacedKey key) {
+        try {
+            Integer i = pdc.get(key, PersistentDataType.INTEGER);
+            if (i != null) return new JsonPrimitive(i);
+        } catch (IllegalArgumentException ignored) {}
+
+        try {
+            Double d = pdc.get(key, PersistentDataType.DOUBLE);
+            if (d != null) return new JsonPrimitive(d);
+        } catch (IllegalArgumentException ignored) {}
+
+        try {
+            String s = pdc.get(key, PersistentDataType.STRING);
+            if (s != null) return new JsonPrimitive(s);
+        } catch (IllegalArgumentException ignored) {}
+
+        return null;
     }
 }

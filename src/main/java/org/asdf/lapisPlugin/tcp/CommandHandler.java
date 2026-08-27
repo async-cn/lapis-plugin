@@ -60,6 +60,10 @@ public class CommandHandler {
                 case "remove_custom_data" -> handleRemoveCustomData(data, response);
                 case "execute_command" -> handleExecuteCommand(data, response);
                 case "set_block" -> handleSetBlock(data, response, packageName);
+                case "money_query" -> handleMoneyQuery(data, response);
+                case "money_give" -> handleMoneyGive(data, response);
+                case "money_set" -> handleMoneySet(data, response);
+                case "money_take" -> handleMoneyTake(data, response);
                 default -> {
                     response.addProperty("response_type", type + "_response");
                     response.addProperty("ok", false);
@@ -171,8 +175,34 @@ public class CommandHandler {
         int y = pos.get(1).getAsInt();
         int z = pos.get(2).getAsInt();
         String worldName = data.has("world") ? data.get("world").getAsString() : null;
-        String blockStateStr = data.has("block_state") ? data.get("block_state").getAsString() : null;
-        JsonObject nbt = data.has("nbt") ? data.getAsJsonObject("nbt") : null;
+
+        // block_state 支持 string 或 dict
+        String blockStateStr = null;
+        if (data.has("block_state")) {
+            JsonElement bsElem = data.get("block_state");
+            if (bsElem.isJsonObject()) {
+                JsonObject bsObj = bsElem.getAsJsonObject();
+                if (bsObj.size() > 0) {
+                    StringBuilder sb = new StringBuilder();
+                    for (var entry : bsObj.entrySet()) {
+                        if (sb.length() > 0) sb.append(",");
+                        sb.append(entry.getKey()).append("=").append(entry.getValue().getAsString());
+                    }
+                    blockStateStr = sb.toString();
+                }
+            } else if (!bsElem.isJsonNull()) {
+                blockStateStr = bsElem.getAsString();
+            }
+        }
+
+        // nbt 支持 dict 或 null
+        JsonObject nbt = null;
+        if (data.has("nbt")) {
+            JsonElement nbtElem = data.get("nbt");
+            if (nbtElem.isJsonObject() && !nbtElem.getAsJsonObject().isEmpty()) {
+                nbt = nbtElem.getAsJsonObject();
+            }
+        }
 
         World world = worldName != null ? Bukkit.getWorld(worldName) : Bukkit.getWorlds().get(0);
         if (world == null) {
@@ -398,5 +428,120 @@ public class CommandHandler {
         response.addProperty("response_type", "remove_custom_data_response");
         response.addProperty("ok", true);
         response.add("data", new JsonObject());
+    }
+
+
+    private static void handleMoneyQuery(JsonObject data, JsonObject response) {
+        if (!LapisPlugin.getInstance().hasEconomy()) {
+            errorResponse(response, "money_query_response", "Economy system not available (Vault not installed)");
+            return;
+        }
+
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "money_query_response", "Player not found or offline");
+            return;
+        }
+
+        double balance = LapisPlugin.getInstance().getEconomy().getBalance(player);
+
+        response.addProperty("response_type", "money_query_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("balance", balance);
+        response.add("data", respData);
+    }
+
+    private static void handleMoneyGive(JsonObject data, JsonObject response) {
+        if (!LapisPlugin.getInstance().hasEconomy()) {
+            errorResponse(response, "money_give_response", "Economy system not available (Vault not installed)");
+            return;
+        }
+
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        double amount = data.get("amount").getAsDouble();
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "money_give_response", "Player not found or offline");
+            return;
+        }
+
+        var economy = LapisPlugin.getInstance().getEconomy();
+        economy.depositPlayer(player, amount);
+
+        response.addProperty("response_type", "money_give_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("new_balance", economy.getBalance(player));
+        response.add("data", respData);
+    }
+
+    private static void handleMoneySet(JsonObject data, JsonObject response) {
+        if (!LapisPlugin.getInstance().hasEconomy()) {
+            errorResponse(response, "money_set_response", "Economy system not available (Vault not installed)");
+            return;
+        }
+
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        double amount = data.get("amount").getAsDouble();
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "money_set_response", "Player not found or offline");
+            return;
+        }
+
+        var economy = LapisPlugin.getInstance().getEconomy();
+        double current = economy.getBalance(player);
+        if (amount > current) {
+            economy.depositPlayer(player, amount - current);
+        } else if (amount < current) {
+            economy.withdrawPlayer(player, current - amount);
+        }
+
+        response.addProperty("response_type", "money_set_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("new_balance", economy.getBalance(player));
+        response.add("data", respData);
+    }
+
+    private static void handleMoneyTake(JsonObject data, JsonObject response) {
+        if (!LapisPlugin.getInstance().hasEconomy()) {
+            errorResponse(response, "money_take_response", "Economy system not available (Vault not installed)");
+            return;
+        }
+
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        double amount = data.get("amount").getAsDouble();
+        boolean force = data.has("force") && data.get("force").getAsBoolean();
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "money_take_response", "Player not found or offline");
+            return;
+        }
+
+        var economy = LapisPlugin.getInstance().getEconomy();
+        double current = economy.getBalance(player);
+        boolean success;
+
+        if (force) {
+            economy.withdrawPlayer(player, amount);
+            success = true;
+        } else {
+            if (current >= amount) {
+                economy.withdrawPlayer(player, amount);
+                success = true;
+            } else {
+                success = false;
+            }
+        }
+
+        response.addProperty("response_type", "money_take_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.addProperty("is_success", success);
+        respData.addProperty("new_balance", economy.getBalance(player));
+        response.add("data", respData);
     }
 }
