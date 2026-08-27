@@ -126,11 +126,19 @@ public class TcpManager {
                 final JsonObject command = msg;
                 final String finalPackageName = packageName;
                 final DataOutputStream finalOut = out;
+                final String cmdType = msg.has("command_type") ? msg.get("command_type").getAsString() : "";
 
-                org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
-                    JsonObject response = CommandHandler.handle(command, finalPackageName);
-                    send(finalOut, response);
-                });
+                if ("ask_input".equals(cmdType)) {
+                    new Thread(() -> {
+                        JsonObject response = CommandHandler.handle(command, finalPackageName);
+                        send(finalOut, response);
+                    }, "Lapis-AskInput-" + socket.getInetAddress()).start();
+                } else {
+                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+                        JsonObject response = CommandHandler.handle(command, finalPackageName);
+                        send(finalOut, response);
+                    });
+                }
             }
 
         } catch (EOFException e) {

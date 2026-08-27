@@ -64,6 +64,7 @@ public class CommandHandler {
                 case "money_give" -> handleMoneyGive(data, response);
                 case "money_set" -> handleMoneySet(data, response);
                 case "money_take" -> handleMoneyTake(data, response);
+                case "ask_input" -> handleAskInput(data, response);
                 default -> {
                     response.addProperty("response_type", type + "_response");
                     response.addProperty("ok", false);
@@ -543,5 +544,21 @@ public class CommandHandler {
         respData.addProperty("is_success", success);
         respData.addProperty("new_balance", economy.getBalance(player));
         response.add("data", respData);
+    }
+
+    private static void handleAskInput(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        boolean prompt = data.has("prompt") && data.get("prompt").getAsBoolean();
+        String messageType = data.has("message_type") ? data.get("message_type").getAsString() : "pure_text";
+        String messageContent = data.has("message_content") ? data.get("message_content").getAsString() : "";
+        double timeout = data.has("timeout") ? data.get("timeout").getAsDouble() : -1;
+
+        JsonObject result = LapisPlugin.getInstance().getAskInputManager().ask(
+                playerUuid, prompt, messageType, messageContent, timeout
+        );
+
+        response.addProperty("response_type", "ask_input_response");
+        response.addProperty("ok", true);
+        response.add("data", result);
     }
 }

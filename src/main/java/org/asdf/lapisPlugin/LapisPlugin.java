@@ -9,6 +9,7 @@ import org.asdf.lapisPlugin.config.EventConfig;
 import org.asdf.lapisPlugin.event.EventBridge;
 import org.asdf.lapisPlugin.i18n.LanguageManager;
 import org.asdf.lapisPlugin.tcp.TcpManager;
+import org.asdf.lapisPlugin.askInput.AskInputManager;
 
 public class LapisPlugin extends JavaPlugin {
 
@@ -19,6 +20,7 @@ public class LapisPlugin extends JavaPlugin {
     private EventConfig eventConfig;
     private PdcManager pdcManager;
     private Economy economy;
+    private AskInputManager askInputManager;
 
     @Override
     public void onEnable() {
@@ -34,6 +36,8 @@ public class LapisPlugin extends JavaPlugin {
         pdcManager = new PdcManager(this);
 
         setupEconomy();
+
+        askInputManager = new AskInputManager(this);
 
         int port = getConfig().getInt("tcp-port", 9331);
 
@@ -101,5 +105,9 @@ public class LapisPlugin extends JavaPlugin {
 
     public boolean hasEconomy() {
         return economy != null;
+    }
+
+    public AskInputManager getAskInputManager() {
+        return askInputManager;
     }
 }
