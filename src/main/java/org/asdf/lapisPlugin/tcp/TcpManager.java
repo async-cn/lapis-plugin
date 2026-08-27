@@ -79,6 +79,20 @@ public class TcpManager {
                 String raw = new String(bytes, StandardCharsets.UTF_8);
                 JsonObject msg = JsonParser.parseString(raw).getAsJsonObject();
 
+                if (msg.has("message_response_type")) {
+                    String msgRespType = msg.get("message_response_type").getAsString();
+                    if ("event_proxy_result".equals(msgRespType)) {
+                        JsonObject respData = msg.getAsJsonObject("data");
+                        String eventId = respData.has("event_id") ? respData.get("event_id").getAsString() : null;
+                        if (eventId != null) {
+                            LapisPlugin.getInstance().getEventBridge().onProxyResponse(eventId, respData);
+                        } else {
+                            plugin.getLogger().warning("event_proxy_result missing event_id");
+                        }
+                        continue;
+                    }
+                }
+
                 if (!msg.has("id")) {
                     plugin.getLogger().warning("Received message without id: " + raw);
                     continue;
@@ -115,12 +129,7 @@ public class TcpManager {
                     continue;
                 }
 
-                if (msg.has("message_response_type") && "event_proxy_result".equals(msg.get("message_response_type").getAsString())) {
-                    JsonObject respData = msg.getAsJsonObject("data");
-                    String eventId = respData.get("event_id").getAsString();
-                    LapisPlugin.getInstance().getEventBridge().onProxyResponse(eventId, respData);
-                    continue;
-                }
+
 
 
                 final JsonObject command = msg;

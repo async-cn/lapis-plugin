@@ -112,12 +112,17 @@ public class EventBridge {
 
     private void handleEvent(String eventType, Event event) {
         List<ListenerInfo> listeners = registry.get(eventType);
-        if (listeners == null || listeners.isEmpty()) return;
+        if (listeners == null || listeners.isEmpty()) {
+            return;
+        }
 
         JsonObject innerData = EventSerializer.serialize(eventType, event);
 
         for (ListenerInfo info : listeners) {
-            if (!FilterEngine.evaluate(info.filter, innerData)) continue;
+
+            if (!FilterEngine.evaluate(info.filter, innerData)) {
+                continue;
+            }
 
             JsonObject payload = SubscriptionExtractor.apply(innerData, info.subscription);
 
@@ -146,7 +151,6 @@ public class EventBridge {
                         cancellable.setCancelled(true);
                     }
                 } catch (Exception e) {
-                    plugin.getLogger().warning("Proxy event timeout or error for " + eventType + ": " + e.getMessage());
                 } finally {
                     proxyFutures.remove(eventId);
                 }
