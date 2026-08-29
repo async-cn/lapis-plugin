@@ -1,3 +1,4 @@
 tcp-port: 9331
 password: ""
 language: "zhcn"
+proxy-timeout: 3000

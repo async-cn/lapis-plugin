@@ -1,6 +1,10 @@
 package org.asdf.lapisPlugin.event;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -61,6 +65,7 @@ public class EventSerializer {
     private static JsonObject serializePlayer(Player player) {
         JsonObject obj = new JsonObject();
         obj.addProperty("uuid", player.getUniqueId().toString());
+        obj.addProperty("name", player.getName());
 
         var pdcManager = LapisPlugin.getInstance().getPdcManager();
         var pdc = player.getPersistentDataContainer();
@@ -79,12 +84,59 @@ public class EventSerializer {
 
     private static JsonObject serializeBlock(org.bukkit.block.Block block) {
         JsonObject obj = new JsonObject();
-        obj.addProperty("type", block.getType().getKey().toString());
-        obj.addProperty("x", block.getX());
-        obj.addProperty("y", block.getY());
-        obj.addProperty("z", block.getZ());
         obj.addProperty("world", block.getWorld().getName());
+
+
+        JsonObject pos = new JsonObject();
+        pos.addProperty("x", block.getX());
+        pos.addProperty("y", block.getY());
+        pos.addProperty("z", block.getZ());
+        obj.add("pos", pos);
+
+
+        obj.addProperty("id", block.getType().getKey().toString());
+
+        JsonObject state = new JsonObject();
+        String blockDataStr = block.getBlockData().getAsString();
+        int bracketStart = blockDataStr.indexOf('[');
+        if (bracketStart != -1 && blockDataStr.endsWith("]")) {
+            String stateStr = blockDataStr.substring(bracketStart + 1, blockDataStr.length() - 1);
+            if (!stateStr.isEmpty()) {
+                for (String pair : stateStr.split(",")) {
+                    String[] kv = pair.split("=", 2);
+                    if (kv.length == 2) {
+                        state.addProperty(kv[0].trim(), kv[1].trim());
+                    }
+                }
+            }
+        }
+        obj.add("state", state);
+
+
         JsonObject nbt = new JsonObject();
+        StringBuilder nbtOutput = new StringBuilder();
+        org.bukkit.command.CommandSender nbtSender = Bukkit.createCommandSender(component -> {
+            nbtOutput.append(PlainTextComponentSerializer.plainText().serialize(component));
+        });
+
+        String worldKey = block.getWorld().getKey().toString();
+        String cmd = String.format(
+                "execute in %s run data get block %d %d %d",
+                worldKey, block.getX(), block.getY(), block.getZ()
+        );
+        Bukkit.dispatchCommand(nbtSender, cmd);
+
+        String nbtStr = nbtOutput.toString().trim();
+        int braceStart = nbtStr.indexOf('{');
+        if (braceStart != -1) {
+            String jsonPart = nbtStr.substring(braceStart);
+            try {
+                nbt = JsonParser.parseString(jsonPart).getAsJsonObject();
+            } catch (Exception e) {
+                nbt.addProperty("_raw", jsonPart);
+            }
+        }
+
         obj.add("nbt", nbt);
         return obj;
     }

@@ -3,13 +3,16 @@ package org.asdf.lapisPlugin.tcp;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -64,6 +67,13 @@ public class CommandHandler {
                 case "money_give" -> handleMoneyGive(data, response);
                 case "money_set" -> handleMoneySet(data, response);
                 case "money_take" -> handleMoneyTake(data, response);
+                case "get_block" -> handleGetBlock(data, response);
+                case "get_entity" -> handleGetEntity(data, response);
+                case "show_title" -> handleShowTitle(data, response);
+                case "play_sound" -> handlePlaySound(data, response);
+                case "play_sound_private" -> handlePlaySoundPrivate(data, response);
+                case "actionbar_set" -> handleActionBarSet(data, response);
+                case "actionbar_clear" -> handleActionBarClear(data, response);
                 case "ask_input" -> handleAskInput(data, response);
                 default -> {
                     response.addProperty("response_type", type + "_response");
@@ -171,13 +181,12 @@ public class CommandHandler {
 
     private static void handleSetBlock(JsonObject data, JsonObject response, String packageName) {
         String blockId = data.get("block_id").getAsString();
-        JsonArray pos = data.getAsJsonArray("pos");
-        int x = pos.get(0).getAsInt();
-        int y = pos.get(1).getAsInt();
-        int z = pos.get(2).getAsInt();
+        JsonObject posObj = data.getAsJsonObject("pos");
+        int x = posObj.get("x").getAsInt();
+        int y = posObj.get("y").getAsInt();
+        int z = posObj.get("z").getAsInt();
         String worldName = data.has("world") ? data.get("world").getAsString() : null;
 
-        // block_state 支持 string 或 dict
         String blockStateStr = null;
         if (data.has("block_state")) {
             JsonElement bsElem = data.get("block_state");
@@ -196,7 +205,6 @@ public class CommandHandler {
             }
         }
 
-        // nbt 支持 dict 或 null
         JsonObject nbt = null;
         if (data.has("nbt")) {
             JsonElement nbtElem = data.get("nbt");
@@ -434,18 +442,14 @@ public class CommandHandler {
 
     private static void handleMoneyQuery(JsonObject data, JsonObject response) {
         if (!LapisPlugin.getInstance().hasEconomy()) {
-            errorResponse(response, "money_query_response", "Economy system not available (Vault not installed)");
+            errorResponse(response, "money_query_response", "Economy system not available");
             return;
         }
 
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null || !player.isOnline()) {
-            errorResponse(response, "money_query_response", "Player not found or offline");
-            return;
-        }
+        org.bukkit.OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerUuid);
 
-        double balance = LapisPlugin.getInstance().getEconomy().getBalance(player);
+        double balance = LapisPlugin.getInstance().getEconomy().getBalance(offlinePlayer);
 
         response.addProperty("response_type", "money_query_response");
         response.addProperty("ok", true);
@@ -456,82 +460,70 @@ public class CommandHandler {
 
     private static void handleMoneyGive(JsonObject data, JsonObject response) {
         if (!LapisPlugin.getInstance().hasEconomy()) {
-            errorResponse(response, "money_give_response", "Economy system not available (Vault not installed)");
+            errorResponse(response, "money_give_response", "Economy system not available");
             return;
         }
 
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
         double amount = data.get("amount").getAsDouble();
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null || !player.isOnline()) {
-            errorResponse(response, "money_give_response", "Player not found or offline");
-            return;
-        }
+        org.bukkit.OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerUuid);
 
         var economy = LapisPlugin.getInstance().getEconomy();
-        economy.depositPlayer(player, amount);
+        economy.depositPlayer(offlinePlayer, amount);
 
         response.addProperty("response_type", "money_give_response");
         response.addProperty("ok", true);
         JsonObject respData = new JsonObject();
-        respData.addProperty("new_balance", economy.getBalance(player));
+        respData.addProperty("new_balance", economy.getBalance(offlinePlayer));
         response.add("data", respData);
     }
 
     private static void handleMoneySet(JsonObject data, JsonObject response) {
         if (!LapisPlugin.getInstance().hasEconomy()) {
-            errorResponse(response, "money_set_response", "Economy system not available (Vault not installed)");
+            errorResponse(response, "money_set_response", "Economy system not available");
             return;
         }
 
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
         double amount = data.get("amount").getAsDouble();
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null || !player.isOnline()) {
-            errorResponse(response, "money_set_response", "Player not found or offline");
-            return;
-        }
+        org.bukkit.OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerUuid);
 
         var economy = LapisPlugin.getInstance().getEconomy();
-        double current = economy.getBalance(player);
+        double current = economy.getBalance(offlinePlayer);
         if (amount > current) {
-            economy.depositPlayer(player, amount - current);
+            economy.depositPlayer(offlinePlayer, amount - current);
         } else if (amount < current) {
-            economy.withdrawPlayer(player, current - amount);
+            economy.withdrawPlayer(offlinePlayer, current - amount);
         }
 
         response.addProperty("response_type", "money_set_response");
         response.addProperty("ok", true);
         JsonObject respData = new JsonObject();
-        respData.addProperty("new_balance", economy.getBalance(player));
+        respData.addProperty("new_balance", economy.getBalance(offlinePlayer));
         response.add("data", respData);
     }
 
     private static void handleMoneyTake(JsonObject data, JsonObject response) {
         if (!LapisPlugin.getInstance().hasEconomy()) {
-            errorResponse(response, "money_take_response", "Economy system not available (Vault not installed)");
+            errorResponse(response, "money_take_response", "Economy system not available");
             return;
         }
 
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
         double amount = data.get("amount").getAsDouble();
         boolean force = data.has("force") && data.get("force").getAsBoolean();
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null || !player.isOnline()) {
-            errorResponse(response, "money_take_response", "Player not found or offline");
-            return;
-        }
+        org.bukkit.OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerUuid);
 
         var economy = LapisPlugin.getInstance().getEconomy();
-        double current = economy.getBalance(player);
+        double current = economy.getBalance(offlinePlayer);
         boolean success;
 
         if (force) {
-            economy.withdrawPlayer(player, amount);
+            economy.withdrawPlayer(offlinePlayer, amount);
             success = true;
         } else {
             if (current >= amount) {
-                economy.withdrawPlayer(player, amount);
+                economy.withdrawPlayer(offlinePlayer, amount);
                 success = true;
             } else {
                 success = false;
@@ -542,7 +534,7 @@ public class CommandHandler {
         response.addProperty("ok", true);
         JsonObject respData = new JsonObject();
         respData.addProperty("is_success", success);
-        respData.addProperty("new_balance", economy.getBalance(player));
+        respData.addProperty("new_balance", economy.getBalance(offlinePlayer));
         response.add("data", respData);
     }
 
@@ -560,5 +552,260 @@ public class CommandHandler {
         response.addProperty("response_type", "ask_input_response");
         response.addProperty("ok", true);
         response.add("data", result);
+    }
+
+    private static void handleGetBlock(JsonObject data, JsonObject response) {
+        String worldName = data.has("world") ? data.get("world").getAsString() : null;
+        JsonObject posObj = data.getAsJsonObject("pos");
+        int x = posObj.get("x").getAsInt();
+        int y = posObj.get("y").getAsInt();
+        int z = posObj.get("z").getAsInt();
+
+
+        World world = worldName != null ? Bukkit.getWorld(worldName) : Bukkit.getWorlds().get(0);
+        if (world == null) {
+            errorResponse(response, "get_block_response", "Unknown world: " + worldName);
+            return;
+        }
+
+        Block block = world.getBlockAt(x, y, z);
+        String blockId = block.getType().getKey().toString();
+
+        JsonObject blockState = new JsonObject();
+        String blockDataStr = block.getBlockData().getAsString();
+        int bracketStart = blockDataStr.indexOf('[');
+        if (bracketStart != -1 && blockDataStr.endsWith("]")) {
+            String stateStr = blockDataStr.substring(bracketStart + 1, blockDataStr.length() - 1);
+            if (!stateStr.isEmpty()) {
+                for (String pair : stateStr.split(",")) {
+                    String[] kv = pair.split("=", 2);
+                    if (kv.length == 2) {
+                        blockState.addProperty(kv[0].trim(), kv[1].trim());
+                    }
+                }
+            }
+        }
+
+        JsonObject nbt = new JsonObject();
+        StringBuilder nbtOutput = new StringBuilder();
+        org.bukkit.command.CommandSender nbtSender = Bukkit.createCommandSender(component -> {
+            nbtOutput.append(PlainTextComponentSerializer.plainText().serialize(component));
+        });
+
+        String cmd = String.format("data get block %d %d %d", x, y, z);
+        Bukkit.dispatchCommand(nbtSender, cmd);
+
+        String nbtStr = nbtOutput.toString().trim();
+        int braceStart = nbtStr.indexOf('{');
+        if (braceStart != -1) {
+            String jsonPart = nbtStr.substring(braceStart);
+            try {
+                nbt = JsonParser.parseString(jsonPart).getAsJsonObject();
+            } catch (Exception e) {
+                nbt.addProperty("_raw", jsonPart);
+            }
+        }
+
+        response.addProperty("response_type", "get_block_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        JsonObject blockObj = new JsonObject();
+        blockObj.addProperty("id", blockId);
+        blockObj.addProperty("world", world.getName());
+
+        JsonObject pos = new JsonObject();
+        pos.addProperty("x", block.getX());
+        pos.addProperty("y", block.getY());
+        pos.addProperty("z", block.getZ());
+        blockObj.add("pos", pos);
+
+        blockObj.add("state", blockState);
+        blockObj.add("nbt", nbt);
+        respData.add("block", blockObj);
+        response.add("data", respData);
+    }
+
+    private static void handleGetEntity(JsonObject data, JsonObject response) {
+        UUID entityUuid = UUID.fromString(data.get("uuid").getAsString());
+        Entity entity = Bukkit.getEntity(entityUuid);
+
+        if (entity == null) {
+            errorResponse(response, "get_entity_response", "Entity not found");
+            return;
+        }
+
+        JsonObject nbt = new JsonObject();
+        nbt.addProperty("type", entity.getType().getKey().toString());
+        nbt.addProperty("uuid", entity.getUniqueId().toString());
+        nbt.addProperty("name", entity.getName());
+        if (entity.customName() != null) {
+            nbt.addProperty("custom_name", entity.customName().toString());
+        }
+        nbt.addProperty("world", entity.getWorld().getName());
+        nbt.addProperty("x", entity.getLocation().getX());
+        nbt.addProperty("y", entity.getLocation().getY());
+        nbt.addProperty("z", entity.getLocation().getZ());
+
+        if (entity instanceof LivingEntity living) {
+            nbt.addProperty("health", living.getHealth());
+            nbt.addProperty("max_health", living.getMaxHealth());
+        }
+
+        StringBuilder nbtOutput = new StringBuilder();
+        org.bukkit.command.CommandSender nbtSender = Bukkit.createCommandSender(component -> {
+            nbtOutput.append(PlainTextComponentSerializer.plainText().serialize(component));
+        });
+
+        String cmd = String.format("data get entity %s", entityUuid.toString());
+        Bukkit.dispatchCommand(nbtSender, cmd);
+
+        String nbtStr = nbtOutput.toString().trim();
+        int braceStart = nbtStr.indexOf('{');
+        if (braceStart != -1) {
+            String jsonPart = nbtStr.substring(braceStart);
+            try {
+                JsonObject fullNbt = JsonParser.parseString(jsonPart).getAsJsonObject();
+                nbt.add("_full", fullNbt);
+            } catch (Exception e) {
+                nbt.addProperty("_full_raw", jsonPart);
+            }
+        }
+
+        response.addProperty("response_type", "get_entity_response");
+        response.addProperty("ok", true);
+        JsonObject respData = new JsonObject();
+        respData.add("entity", nbt);
+        response.add("data", respData);
+    }
+
+    private static void handleShowTitle(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "show_title_response", "Player not found or offline");
+            return;
+        }
+
+        String titleType = data.has("title_type") ? data.get("title_type").getAsString() : "pure_text";
+        String titleContent = data.get("title").getAsString();
+        String subtitleType = data.has("subtitle_type") ? data.get("subtitle_type").getAsString() : "pure_text";
+        String subtitleContent = data.has("subtitle") ? data.get("subtitle").getAsString() : "";
+        int fadeIn = data.has("fade_in") ? data.get("fade_in").getAsInt() : 10;
+        int stay = data.has("stay") ? data.get("stay").getAsInt() : 70;
+        int fadeOut = data.has("fade_out") ? data.get("fade_out").getAsInt() : 20;
+
+        try {
+            Component title = "text_component".equals(titleType)
+                    ? GsonComponentSerializer.gson().deserialize(titleContent)
+                    : Component.text(titleContent);
+
+            Component subtitle = "text_component".equals(subtitleType) && !subtitleContent.isEmpty()
+                    ? GsonComponentSerializer.gson().deserialize(subtitleContent)
+                    : (subtitleContent.isEmpty() ? Component.empty() : Component.text(subtitleContent));
+
+            player.showTitle(net.kyori.adventure.title.Title.title(
+                    title,
+                    subtitle,
+                    net.kyori.adventure.title.Title.Times.times(
+                            java.time.Duration.ofMillis(fadeIn * 50L),
+                            java.time.Duration.ofMillis(stay * 50L),
+                            java.time.Duration.ofMillis(fadeOut * 50L)
+                    )
+            ));
+
+            response.addProperty("response_type", "show_title_response");
+            response.addProperty("ok", true);
+            response.add("data", new JsonObject());
+        } catch (Exception e) {
+            errorResponse(response, "show_title_response", "Invalid title format: " + e.getMessage());
+        }
+    }
+
+    private static void handlePlaySound(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "play_sound_response", "Player not found or offline");
+            return;
+        }
+
+        String soundId = data.get("sound_id").getAsString();
+        float volume = data.has("volume") ? data.get("volume").getAsFloat() : 1.0f;
+        float pitch = data.has("pitch") ? data.get("pitch").getAsFloat() : 1.0f;
+
+        try {
+            player.getWorld().playSound(player.getLocation(), soundId, volume, pitch);
+
+            response.addProperty("response_type", "play_sound_response");
+            response.addProperty("ok", true);
+            response.add("data", new JsonObject());
+        } catch (Exception e) {
+            errorResponse(response, "play_sound_response", "Failed: " + e.getMessage());
+        }
+    }
+
+    private static void handlePlaySoundPrivate(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "play_sound_private_response", "Player not found or offline");
+            return;
+        }
+
+        String soundId = data.get("sound_id").getAsString();
+        float volume = data.has("volume") ? data.get("volume").getAsFloat() : 1.0f;
+        float pitch = data.has("pitch") ? data.get("pitch").getAsFloat() : 1.0f;
+
+        String cmd = String.format(
+                "playsound %s master %s ~ ~ ~ %f %f",
+                soundId, player.getName(), volume, pitch
+        );
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+
+        response.addProperty("response_type", "play_sound_private_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
+    }
+
+    private static void handleActionBarSet(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        String messageType = data.has("message_type") ? data.get("message_type").getAsString() : "pure_text";
+        String messageContent = data.get("message_content").getAsString();
+
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "actionbar_set_response", "Player not found or offline");
+            return;
+        }
+
+        try {
+            if ("text_component".equals(messageType)) {
+                Component component = GsonComponentSerializer.gson().deserialize(messageContent);
+                player.sendActionBar(component);
+            } else {
+                player.sendActionBar(Component.text(messageContent));
+            }
+
+            response.addProperty("response_type", "actionbar_set_response");
+            response.addProperty("ok", true);
+            response.add("data", new JsonObject());
+        } catch (Exception e) {
+            errorResponse(response, "actionbar_set_response", "Invalid message format: " + e.getMessage());
+        }
+    }
+
+    private static void handleActionBarClear(JsonObject data, JsonObject response) {
+        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        Player player = Bukkit.getPlayer(playerUuid);
+        if (player == null || !player.isOnline()) {
+            errorResponse(response, "actionbar_clear_response", "Player not found or offline");
+            return;
+        }
+
+        player.sendActionBar(Component.empty());
+
+        response.addProperty("response_type", "actionbar_clear_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
     }
 }

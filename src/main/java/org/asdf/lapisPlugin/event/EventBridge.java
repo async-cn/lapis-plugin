@@ -27,7 +27,7 @@ public class EventBridge {
     private final Map<String, List<ListenerInfo>> registry = new HashMap<>();
     private final Map<String, Listener> activeListeners = new HashMap<>();
     private final Map<String, CompletableFuture<JsonObject>> proxyFutures = new ConcurrentHashMap<>();
-    private static final long PROXY_TIMEOUT_MS = 3000;
+    private static final long PROXY_TIMEOUT_MS = LapisPlugin.getInstance().getConfig().getLong("proxy-timeout");
 
     public EventBridge(JavaPlugin plugin, EventConfig eventConfig) {
         this.plugin = plugin;
@@ -76,8 +76,6 @@ public class EventBridge {
             }
         }
     }
-
-    // 被 TcpManager 调用，处理 Python 回传的 message_response
     public void onProxyResponse(String eventId, JsonObject responseData) {
         CompletableFuture<JsonObject> future = proxyFutures.remove(eventId);
         if (future != null) {
