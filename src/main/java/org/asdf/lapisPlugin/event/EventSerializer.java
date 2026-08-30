@@ -76,7 +76,7 @@ public class EventSerializer {
         JsonObject nbt = new JsonObject();
         nbt.addProperty("name", player.getName());
         nbt.addProperty("display_name", player.getDisplayName());
-        obj.add("nbt", nbt);
+        obj.add("nbt", NbtCollector.collectPlayerNbt(player));
         return obj;
     }
 
@@ -116,7 +116,7 @@ public class EventSerializer {
                 nbt = pdcManager.readAllData(tileState.getPersistentDataContainer());
             }
         } catch (Exception ignored) {}
-        obj.add("nbt", nbt);
+        obj.add("nbt", NbtCollector.collectBlockNbt(block));
 
         return obj;
     }
