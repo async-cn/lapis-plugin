@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import org.asdf.lapisPlugin.LapisPlugin;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -16,14 +17,16 @@ public class TcpManager {
 
     private final LapisPlugin plugin;
     private final int port;
+    private final InetAddress host;
     private ServerSocket serverSocket;
     private Thread serverThread;
     private volatile boolean running = false;
     private final ConcurrentHashMap<String, ClientSession> sessions = new ConcurrentHashMap<>();
 
-    public TcpManager(LapisPlugin plugin, int port) {
+    public TcpManager(LapisPlugin plugin, int port, InetAddress host) {
         this.plugin = plugin;
         this.port = port;
+        this.host = host;
     }
 
     public void start() {
@@ -44,8 +47,8 @@ public class TcpManager {
 
     private void runServer() {
         try {
-            serverSocket = new ServerSocket(port);
-            plugin.getLogger().info("Lapis TCP server listening on port " + port);
+            serverSocket = new ServerSocket(port, 0,host);
+            plugin.getLogger().info("Lapis TCP server listening on " + host + ":" + port);
 
             while (running) {
                 Socket socket = serverSocket.accept();

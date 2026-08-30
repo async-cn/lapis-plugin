@@ -23,8 +23,8 @@ public class LanguageManager {
 
         InputStream stream = plugin.getResource(fileName);
         if (stream == null) {
-            plugin.getLogger().warning("Language file not found: " + fileName + ", falling back to en");
-            stream = plugin.getResource("language/en.yml");
+            plugin.getLogger().warning("Language file not found: " + fileName + ", falling back to zh_cn");
+            stream = plugin.getResource("language/zh_cn.yml");
             if (stream == null) {
                 plugin.getLogger().severe("Default language file not found!");
                 this.lang = new YamlConfiguration();

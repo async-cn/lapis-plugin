@@ -1,4 +1,5 @@
+host: localhost
 tcp-port: 9331
 password: ""
-language: "zhcn"
+language: "zh_cn"
 proxy-timeout: 3000

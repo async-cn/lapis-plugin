@@ -11,6 +11,8 @@ import org.asdf.lapisPlugin.i18n.LanguageManager;
 import org.asdf.lapisPlugin.tcp.TcpManager;
 import org.asdf.lapisPlugin.askInput.AskInputManager;
 
+import java.net.InetAddress;
+
 public class LapisPlugin extends JavaPlugin {
 
     private static LapisPlugin instance;
@@ -31,7 +33,7 @@ public class LapisPlugin extends JavaPlugin {
         this.eventConfig.load();
 
         this.languageManager = new LanguageManager(this);
-        this.languageManager.load(getConfig().getString("language", "zhcn"));
+        this.languageManager.load(getConfig().getString("language", "zh_cn"));
 
         pdcManager = new PdcManager(this);
 
@@ -40,9 +42,22 @@ public class LapisPlugin extends JavaPlugin {
         askInputManager = new AskInputManager(this);
 
         int port = getConfig().getInt("tcp-port", 9331);
+        String hostStr = getConfig().getString("host", "localhost");
+
+        InetAddress host;
+        try {
+            host = InetAddress.getByName(hostStr);
+        } catch (java.net.UnknownHostException e) {
+            getLogger().warning("Invalid host '" + hostStr + "', fallback to 0.0.0.0: " + e.getMessage());
+            try {
+                host = InetAddress.getByName("0.0.0.0");
+            } catch (java.net.UnknownHostException ex) {
+                host = null;
+            }
+        }
 
         this.eventBridge = new EventBridge(this, this.eventConfig);
-        this.tcpManager = new TcpManager(this, port);
+        this.tcpManager = new TcpManager(this, port, host);
         this.tcpManager.start();
 
         LapisCommand cmd = new LapisCommand(this);
