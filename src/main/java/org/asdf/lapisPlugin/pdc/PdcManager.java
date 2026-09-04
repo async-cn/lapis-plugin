@@ -1,8 +1,6 @@
 package org.asdf.lapisPlugin.pdc;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import org.bukkit.NamespacedKey;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
@@ -10,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public class PdcManager {
 
+    private static final String TAG_PREFIX = "ctag_";
     private static final String DATA_PREFIX = "cdata_";
     private static final String NAMESPACE = "lapis";
 
@@ -19,61 +18,68 @@ public class PdcManager {
         this.plugin = plugin;
     }
 
-    public void setData(PersistentDataContainer pdc, String packageName, String dataKey, JsonElement value) {
+    public void setTag(PersistentDataContainer pdc, String packageName, String tagName, String value) {
         String pkg = packageName.toLowerCase();
-        String name = dataKey.toLowerCase();
-        NamespacedKey key = new NamespacedKey(NAMESPACE, DATA_PREFIX + pkg + "_" + name);
-        pdc.remove(key);
-
-        if (value == null || value.isJsonNull()) {
-            return;
-        }
-
-        if (value.isJsonPrimitive()) {
-            JsonPrimitive prim = value.getAsJsonPrimitive();
-            if (prim.isNumber()) {
-                double d = prim.getAsDouble();
-                if (d == (int) d) {
-                    pdc.set(key, PersistentDataType.INTEGER, (int) d);
-                } else {
-                    pdc.set(key, PersistentDataType.DOUBLE, d);
-                }
-            } else {
-                pdc.set(key, PersistentDataType.STRING, prim.getAsString());
-            }
-        } else {
-            pdc.set(key, PersistentDataType.STRING, value.toString());
-        }
+        String name = tagName.toLowerCase();
+        NamespacedKey key = new NamespacedKey(NAMESPACE, TAG_PREFIX + pkg + "_" + name);
+        pdc.set(key, PersistentDataType.STRING, value);
     }
 
-    public JsonElement getData(PersistentDataContainer pdc, String packageName, String dataKey) {
+    public String getTag(PersistentDataContainer pdc, String packageName, String tagName) {
         String pkg = packageName.toLowerCase();
-        String name = dataKey.toLowerCase();
-        NamespacedKey key = new NamespacedKey(NAMESPACE, DATA_PREFIX + pkg + "_" + name);
-
-        try {
-            Integer i = pdc.get(key, PersistentDataType.INTEGER);
-            if (i != null) return new JsonPrimitive(i);
-        } catch (IllegalArgumentException ignored) {}
-
-        try {
-            Double d = pdc.get(key, PersistentDataType.DOUBLE);
-            if (d != null) return new JsonPrimitive(d);
-        } catch (IllegalArgumentException ignored) {}
-
-        try {
-            String s = pdc.get(key, PersistentDataType.STRING);
-            if (s != null) return new JsonPrimitive(s);
-        } catch (IllegalArgumentException ignored) {}
-
-        return null;
+        String name = tagName.toLowerCase();
+        NamespacedKey key = new NamespacedKey(NAMESPACE, TAG_PREFIX + pkg + "_" + name);
+        return pdc.get(key, PersistentDataType.STRING);
     }
 
-    public void removeData(PersistentDataContainer pdc, String packageName, String dataKey) {
+    public void removeTag(PersistentDataContainer pdc, String packageName, String tagName) {
         String pkg = packageName.toLowerCase();
-        String name = dataKey.toLowerCase();
+        String name = tagName.toLowerCase();
+        NamespacedKey key = new NamespacedKey(NAMESPACE, TAG_PREFIX + pkg + "_" + name);
+        pdc.remove(key);
+    }
+
+    public void setData(PersistentDataContainer pdc, String packageName, String dataName, String jsonValue) {
+        String pkg = packageName.toLowerCase();
+        String name = dataName.toLowerCase();
+        NamespacedKey key = new NamespacedKey(NAMESPACE, DATA_PREFIX + pkg + "_" + name);
+        pdc.set(key, PersistentDataType.STRING, jsonValue);
+    }
+
+    public String getData(PersistentDataContainer pdc, String packageName, String dataName) {
+        String pkg = packageName.toLowerCase();
+        String name = dataName.toLowerCase();
+        NamespacedKey key = new NamespacedKey(NAMESPACE, DATA_PREFIX + pkg + "_" + name);
+        return pdc.get(key, PersistentDataType.STRING);
+    }
+
+    public void removeData(PersistentDataContainer pdc, String packageName, String dataName) {
+        String pkg = packageName.toLowerCase();
+        String name = dataName.toLowerCase();
         NamespacedKey key = new NamespacedKey(NAMESPACE, DATA_PREFIX + pkg + "_" + name);
         pdc.remove(key);
+    }
+
+    public JsonObject readAllTags(PersistentDataContainer pdc) {
+        JsonObject result = new JsonObject();
+        for (NamespacedKey key : pdc.getKeys()) {
+            if (!key.getNamespace().equals(NAMESPACE)) continue;
+            String keyName = key.getKey();
+            if (!keyName.startsWith(TAG_PREFIX)) continue;
+
+            String raw = keyName.substring(TAG_PREFIX.length());
+            int sep = raw.indexOf('_');
+            if (sep < 0) continue;
+
+            String pkg = raw.substring(0, sep);
+            String tagName = raw.substring(sep + 1);
+            String value = pdc.get(key, PersistentDataType.STRING);
+            if (value == null) continue;
+
+            if (!result.has(pkg)) result.add(pkg, new JsonObject());
+            result.getAsJsonObject(pkg).addProperty(tagName, value);
+        }
+        return result;
     }
 
     public JsonObject readAllData(PersistentDataContainer pdc) {
@@ -88,33 +94,13 @@ public class PdcManager {
             if (sep < 0) continue;
 
             String pkg = raw.substring(0, sep);
-            String dataKey = raw.substring(sep + 1);
-
-            JsonElement value = tryGetValue(pdc, key);
+            String dataName = raw.substring(sep + 1);
+            String value = pdc.get(key, PersistentDataType.STRING);
             if (value == null) continue;
 
             if (!result.has(pkg)) result.add(pkg, new JsonObject());
-            result.getAsJsonObject(pkg).add(dataKey, value);
+            result.getAsJsonObject(pkg).addProperty(dataName, value);
         }
         return result;
-    }
-
-    private JsonElement tryGetValue(PersistentDataContainer pdc, NamespacedKey key) {
-        try {
-            Integer i = pdc.get(key, PersistentDataType.INTEGER);
-            if (i != null) return new JsonPrimitive(i);
-        } catch (IllegalArgumentException ignored) {}
-
-        try {
-            Double d = pdc.get(key, PersistentDataType.DOUBLE);
-            if (d != null) return new JsonPrimitive(d);
-        } catch (IllegalArgumentException ignored) {}
-
-        try {
-            String s = pdc.get(key, PersistentDataType.STRING);
-            if (s != null) return new JsonPrimitive(s);
-        } catch (IllegalArgumentException ignored) {}
-
-        return null;
     }
 }

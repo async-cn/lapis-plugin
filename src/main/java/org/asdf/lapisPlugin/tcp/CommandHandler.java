@@ -6,7 +6,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
@@ -30,7 +29,6 @@ public class CommandHandler {
     public static JsonObject handleHandshake(JsonObject cmd) {
         int id = cmd.get("id").getAsInt();
         JsonObject data = cmd.getAsJsonObject("data");
-        String packageName = data.get("package_name").getAsString();
         String password = data.has("password") ? data.get("password").getAsString() : "";
 
         String expected = LapisPlugin.getInstance().getConfig().getString("password", "");
@@ -245,7 +243,7 @@ public class CommandHandler {
                 var pdc = tileState.getPersistentDataContainer();
                 var pdcManager = LapisPlugin.getInstance().getPdcManager();
                 for (var entry : nbt.entrySet()) {
-                    pdcManager.setData(pdc, packageName, entry.getKey(), entry.getValue());
+                    pdcManager.setData(pdc, packageName, entry.getKey(), entry.getValue().toString());
                 }
                 tileState.update();
             }
@@ -356,7 +354,7 @@ public class CommandHandler {
                 var pdc = meta.getPersistentDataContainer();
                 var pdcManager = LapisPlugin.getInstance().getPdcManager();
                 for (var entry : nbt.entrySet()) {
-                    pdcManager.setData(pdc, packageName, entry.getKey(), entry.getValue());
+                    pdcManager.setData(pdc, packageName, entry.getKey(), entry.getValue().toString());
                 }
             }
         });
@@ -416,7 +414,7 @@ public class CommandHandler {
         PdcTarget target = resolveTarget(data, response, "set_custom_data_response");
         if (target == null) return;
 
-        LapisPlugin.getInstance().getPdcManager().setData(target.pdc(), packageName, dataKey, dataValue);
+        LapisPlugin.getInstance().getPdcManager().setData(target.pdc(), packageName, dataKey, dataValue.toString());
         target.update();
 
         response.addProperty("response_type", "set_custom_data_response");

@@ -114,6 +114,11 @@ public class EventBridge {
             return;
         }
 
+        Class<? extends Event> eventClass = EventTypeMap.get(eventType);
+        if (eventClass != null && !eventClass.isInstance(event)) {
+            return;
+        }
+
         JsonObject innerData = EventSerializer.serialize(eventType, event);
 
         for (ListenerInfo info : listeners) {
