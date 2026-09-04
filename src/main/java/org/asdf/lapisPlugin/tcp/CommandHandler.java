@@ -19,6 +19,7 @@ import org.asdf.lapisPlugin.LapisPlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -304,6 +305,10 @@ public class CommandHandler {
         try {
             if ("text_component".equals(messageType)) {
                 Component component = GsonComponentSerializer.gson().deserialize(messageContent);
+                player.sendMessage(component);
+            } else if ("mini_message".equals(messageType)) {
+                // 解析 MiniMessage 并发送
+                Component component = MiniMessage.miniMessage().deserialize(messageContent);
                 player.sendMessage(component);
             } else {
                 player.sendMessage(Component.text(messageContent));
