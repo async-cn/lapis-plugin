@@ -212,7 +212,10 @@ public class EventSerializer {
 
     private static JsonObject serializeEntityDamage(EntityDamageEvent e) {
         JsonObject data = new JsonObject();
-        data.add("entity", serializeLivingEntity((LivingEntity) e.getEntity()));
+        data.add("entity", serializeEntity(e.getEntity()));
+        if (e.getEntity() instanceof LivingEntity living) {
+            data.addProperty("health", living.getHealth());
+        }
         data.addProperty("damage_cause", e.getCause().toString());
         data.addProperty("damage", e.getDamage());
         data.addProperty("final_damage", e.getFinalDamage());

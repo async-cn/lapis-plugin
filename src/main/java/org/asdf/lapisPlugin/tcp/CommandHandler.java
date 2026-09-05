@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -725,45 +726,57 @@ public class CommandHandler {
     }
 
     private static void handlePlaySound(JsonObject data, JsonObject response) {
-        UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null || !player.isOnline()) {
-            errorResponse(response, "play_sound_response", "Player not found or offline");
-            return;
-        }
-
-        String soundId = data.get("sound_id").getAsString();
+        String worldName = data.has("world") ? data.get("world").getAsString() : null;
+        double x = data.get("x").getAsDouble();
+        double y = data.get("y").getAsDouble();
+        double z = data.get("z").getAsDouble();
+        String sound = data.get("sound").getAsString();
+        String categoryStr = data.has("category") ? data.get("category").getAsString() : "master";
         float volume = data.has("volume") ? data.get("volume").getAsFloat() : 1.0f;
         float pitch = data.has("pitch") ? data.get("pitch").getAsFloat() : 1.0f;
 
-        try {
-            player.getWorld().playSound(player.getLocation(), soundId, volume, pitch);
-
-            response.addProperty("response_type", "play_sound_response");
-            response.addProperty("ok", true);
-            response.add("data", new JsonObject());
-        } catch (Exception e) {
-            errorResponse(response, "play_sound_response", "Failed: " + e.getMessage());
+        World world = worldName != null ? Bukkit.getWorld(worldName) : Bukkit.getWorlds().get(0);
+        if (world == null) {
+            errorResponse(response, "play_sound_response", "Unknown world: " + worldName);
+            return;
         }
+
+        org.bukkit.SoundCategory category;
+        try {
+            category = org.bukkit.SoundCategory.valueOf(categoryStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            category = org.bukkit.SoundCategory.MASTER;
+        }
+
+        Location location = new Location(world, x, y, z);
+        world.playSound(location, sound, category, volume, pitch);
+
+        response.addProperty("response_type", "play_sound_response");
+        response.addProperty("ok", true);
+        response.add("data", new JsonObject());
     }
 
     private static void handlePlaySoundPrivate(JsonObject data, JsonObject response) {
         UUID playerUuid = UUID.fromString(data.get("player_uuid").getAsString());
+        String sound = data.get("sound").getAsString();
+        String categoryStr = data.has("category") ? data.get("category").getAsString() : "master";
+        float volume = data.has("volume") ? data.get("volume").getAsFloat() : 1.0f;
+        float pitch = data.has("pitch") ? data.get("pitch").getAsFloat() : 1.0f;
+
         Player player = Bukkit.getPlayer(playerUuid);
         if (player == null || !player.isOnline()) {
             errorResponse(response, "play_sound_private_response", "Player not found or offline");
             return;
         }
 
-        String soundId = data.get("sound_id").getAsString();
-        float volume = data.has("volume") ? data.get("volume").getAsFloat() : 1.0f;
-        float pitch = data.has("pitch") ? data.get("pitch").getAsFloat() : 1.0f;
+        org.bukkit.SoundCategory category;
+        try {
+            category = org.bukkit.SoundCategory.valueOf(categoryStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            category = org.bukkit.SoundCategory.MASTER;
+        }
 
-        String cmd = String.format(
-                "playsound %s master %s ~ ~ ~ %f %f",
-                soundId, player.getName(), volume, pitch
-        );
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+        player.playSound(player.getLocation(), sound, category, volume, pitch);
 
         response.addProperty("response_type", "play_sound_private_response");
         response.addProperty("ok", true);
